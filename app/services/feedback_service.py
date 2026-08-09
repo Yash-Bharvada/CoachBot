@@ -7,6 +7,7 @@ Mongo, computes section scores, asks Groq for:
   * a sentiment / tone / confidence pass over the transcript
   * a filler-word + disfluency analysis
   * 2–3 model-answer comparisons for the weakest turns
+  * (CHANGE 3) a resume-claim cross-check producing ``resume_gap_flags``
 
 and returns a structured :class:`FeedbackReport` Pydantic model which is
 also persisted to ``feedback_reports`` so subsequent ``GET /report`` calls
@@ -25,7 +26,9 @@ from structlog import get_logger
 
 from app.core.exceptions import InterviewNotFoundError, ReportGenerationError
 from app.models.schemas import (
+    CandidateProfile,
     FeedbackReport,
+    ResumeGapFlag,
     RubricScores,
     SectionScores,
     WeakPoint,
@@ -59,6 +62,29 @@ Given the interviewer question and the candidate's weak answer, produce STRICT J
   "suggested_answer": "A 2–4 sentence model answer: concise, structured, technically accurate and framed as a demonstration of what 'good' looks like."
 }
 The tone: supportive, coaching-oriented.  Never punitive or shaming."""
+
+_RESUME_GAP_SYSTEM_PROMPT = """You are a kind, data-driven career coach.
+Given:
+  1. A list of specific claims from the candidate's resume (skills, projects, roles).
+  2. The full interview transcript (Q: question, A: answer pairs).
+
+For each claim determine whether the candidate substantiated it with a concrete,
+specific answer when probed (or it came up naturally).  Return STRICT JSON:
+{
+  "flags": [
+    {
+      "claim": "EXACT string of the resume claim copied verbatim from the input list.",
+      "issue": "ONE SENTENCE, COACHING TONE (never accusatory): what was missing from the live answer, and why being ready to go deeper on this would strengthen the interview.  Phrasing template: 'Worth being ready to go deeper on X — the live answer didn't include <specific missing element> that interviewers often expect to hear.'"
+    }
+  ]
+}
+RULES:
+  - Include ONLY claims that genuinely lacked substantiation (no examples, very vague, completely dodged).
+  - If a claim was addressed adequately, DO NOT include it.
+  - Maximum 4 flags total.  Always prefer quality over quantity.
+  - The ``issue`` string MUST use the coaching/constructive template tone above. Never accuse ("you lied about X"), always coach ("worth being ready to go deeper on X").
+  - If NO gaps exist return {"flags": []}.
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +143,131 @@ def _find_weakest_turns(
 ) -> list[dict[str, Any]]:
     ranked = sorted(evaluations, key=lambda e: float(e.get("overall_score", 0)))
     return ranked[:limit]
+
+
+# ---------------------------------------------------------------------------
+# CHANGE 3 — Resume claim cross-check
+# ---------------------------------------------------------------------------
+
+
+def _collect_resume_claims(profile: CandidateProfile) -> list[str]:
+    """Flatten the CandidateProfile into short, checkable claim strings.
+
+    We only select the most testable/significant claims: top skills (up to 8),
+    notable projects (up to 3), and most recent role (1).  Education and
+    older roles are skipped because interviewers rarely probe those for
+    substantiation depth.
+    """
+    claims: list[str] = []
+    for skill in profile.skills[:8]:
+        claims.append(f"Skill: {skill}")
+    for proj in profile.notable_projects[:3]:
+        claims.append(f"Project: {proj}")
+    if profile.past_roles:
+        claims.append(f"Recent role: {profile.past_roles[0]}")
+    return claims
+
+
+def _heuristic_substantiation_check(
+    claims: list[str], transcript_lower: str, evaluations: list[dict[str, Any]]
+) -> tuple[list[str], list[str]]:
+    """Fast pre-filter before calling the LLM gap judge.
+
+    A claim is "probably substantiated" if its keywords appear in the answer
+    side of the transcript (A: lines) AND the turn where they appear has
+    technical_depth >= 55.  This lets us skip the LLM for obvious clean
+    cases and save tokens/call latency.
+    """
+    substantiated: list[str] = []
+    needs_llm: list[str] = []
+
+    # Build answer-only text and per-turn map for the depth check.
+    answer_texts: dict[int, str] = {}
+    for ev in evaluations:
+        ti = int(ev.get("turn_index", 0))
+        answer_texts[ti] = str(ev.get("candidate_text", "")).lower()
+        depth = float((ev.get("scores") or {}).get("technical_depth", 0))
+
+    for claim in claims:
+        keyword = claim.split(":", 1)[-1].strip().lower()
+        if len(keyword) < 4:
+            needs_llm.append(claim)
+            continue
+        found = False
+        for ti, ans in answer_texts.items():
+            ev = next(
+                (e for e in evaluations if int(e.get("turn_index", 0)) == ti), None
+            )
+            depth = (
+                float((ev.get("scores") or {}).get("technical_depth", 0))
+                if ev
+                else 0.0
+            )
+            if keyword in ans and depth >= 55:
+                found = True
+                break
+        if found:
+            substantiated.append(claim)
+        else:
+            needs_llm.append(claim)
+    return substantiated, needs_llm
+
+
+async def _detect_resume_gaps(
+    profile: CandidateProfile,
+    transcript: str,
+    evaluations: list[dict[str, Any]],
+) -> list[ResumeGapFlag]:
+    """CHANGE 3 — run the resume-claim cross-check pipeline.
+
+    1. Collect checkable claims from the structured CandidateProfile.
+    2. Heuristic fast-path to skip obviously-substantiated claims.
+    3. LLM judge for the remainder (constructive tone enforced by the system prompt).
+    Returns an empty list for legacy sessions that have no candidate_profile.
+    """
+    claims = _collect_resume_claims(profile)
+    if not claims:
+        return []
+    _, needs_llm = _heuristic_substantiation_check(
+        claims, transcript.lower(), evaluations
+    )
+    if not needs_llm:
+        return []
+    client = await get_groq_client()
+    # Clip transcript to stay inside context windows.
+    clip = transcript if len(transcript) < 8000 else transcript[:8000]
+    user_prompt = (
+        "RESUME CLAIMS TO CHECK (each line is one claim):\n"
+        + "\n".join(f"- {c}" for c in needs_llm)
+        + f"\n\nINTERVIEW TRANSCRIPT:\n{clip}\n\n"
+        + "Return valid flags JSON now."
+    )
+    try:
+        data = await client.chat_completion_json(
+            messages=[
+                {"role": "system", "content": _RESUME_GAP_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.0,
+            max_tokens=1500,
+        )
+    except Exception:  # noqa: BLE001 — never fail the whole report.
+        log.exception("feedback.resume_gap_judge.failed")
+        return []
+    flags_raw = data.get("flags") or []
+    result: list[ResumeGapFlag] = []
+    if not isinstance(flags_raw, list):
+        return []
+    for entry in flags_raw:
+        try:
+            claim = str(entry.get("claim", "")).strip()
+            issue = str(entry.get("issue", "")).strip()
+            if not claim or not issue:
+                continue
+            result.append(ResumeGapFlag(claim=claim, issue=issue))
+        except Exception:  # noqa: BLE001
+            continue
+    return result[:4]
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +365,7 @@ async def generate_feedback_report(
     # --- 1. Load all the raw material.
     role_ctx = await db.role_context_matrices.find_one(
         {"interview_id": interview_id},
-        {"core_competencies": 1, "grounding_summary": 1},
+        {"core_competencies": 1, "grounding_summary": 1, "candidate_profile": 1},
     )
     if role_ctx is None:
         raise InterviewNotFoundError(interview_id)
@@ -229,6 +380,13 @@ async def generate_feedback_report(
     ) or {}
     competencies_probed = set(session_doc.get("competencies_probed", []))
     core_competencies = list(role_ctx.get("core_competencies", []))
+
+    # --- 1b. Load candidate profile (CHANGE 3).  Legacy docs yield an empty profile.
+    candidate_profile_raw = role_ctx.get("candidate_profile") or {}
+    try:
+        candidate_profile = CandidateProfile.model_validate(candidate_profile_raw)
+    except Exception:  # noqa: BLE001 — defensive
+        candidate_profile = CandidateProfile()
 
     # --- 2. Build transcript from turn evals (the ground truth).
     transcript_chunks: list[str] = []
@@ -291,7 +449,12 @@ async def generate_feedback_report(
         c for c in core_competencies if c not in competencies_probed
     ]
 
-    # --- 8. Narrative summary.
+    # --- 8. CHANGE 3: Resume gap flags cross-check.
+    resume_gap_flags = await _detect_resume_gaps(
+        candidate_profile, full_transcript, evaluations
+    )
+
+    # --- 9. Narrative summary.
     narrative = (
         f"Overall readiness score: {overall}/100.  "
         f"Technical accuracy averaged {avg_tech:.0f}/100; "
@@ -304,6 +467,11 @@ async def generate_feedback_report(
             f"  The following competencies were not fully demonstrated: "
             f"{', '.join(competency_gaps[:5])}."
         )
+    if resume_gap_flags:
+        narrative += (
+            f"  Worth noting: {len(resume_gap_flags)} area(s) from the resume "
+            f"are worth being ready to go deeper on."
+        )
 
     now = dt.datetime.now(dt.timezone.utc)
     report = FeedbackReport(
@@ -313,10 +481,11 @@ async def generate_feedback_report(
         weak_points=weak_points,
         competency_gaps=competency_gaps,
         per_turn_scores=per_turn_scores,
+        resume_gap_flags=resume_gap_flags,
         generated_at=now,
     )
 
-    # --- 9. Persist + optionally mark the session finalized.
+    # --- 10. Persist + optionally mark the session finalized.
     await db.feedback_reports.update_one(
         {"interview_id": interview_id},
         {
@@ -333,7 +502,12 @@ async def generate_feedback_report(
         {"$set": {"status": "finalized", "ended_at": now.timestamp()}},
     )
     await connection_manager.finalize_session(interview_id)
-    log.info("feedback.generated", interview_id=interview_id, overall=overall)
+    log.info(
+        "feedback.generated",
+        interview_id=interview_id,
+        overall=overall,
+        resume_gap_flags=len(resume_gap_flags),
+    )
     return report
 
 

@@ -51,6 +51,13 @@ class JDAnalysisError(AppException):
         super().__init__(message, status_code=422, details=details)
 
 
+class ResumeParsingError(AppException):
+    """Raised when an uploaded resume is unsupported, corrupt, or unparseable."""
+
+    def __init__(self, message: str, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message, status_code=422, details=details)
+
+
 class GroundingTimeoutError(AppException):
     """Raised when live web grounding does not return in time.
 

@@ -27,13 +27,79 @@ class BaseResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class CandidateProfile(BaseResponse):
+    """Structured Candidate Profile extracted from an uploaded resume.
+
+    Produced by :mod:`app.services.resume_parsing_service` after raw-text
+    extraction from PDF/DOCX and an LLM pass.  Embedded in the persisted
+    Role Context Matrix under ``candidate_profile`` and surfaced to the
+    frontend as ``candidate_highlights``.
+    """
+
+    skills: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            description="Technical and soft skills explicitly listed or implied.",
+        ),
+    ]
+    past_roles: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            description="Prior job titles with short company/duration context.",
+        ),
+    ]
+    notable_projects: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            description="3-5 highest-signal projects with outcomes when stated.",
+        ),
+    ]
+    education: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            description="Degrees, certifications, and institutions where relevant.",
+        ),
+    ]
+
+
+class ResumeGapFlag(BaseResponse):
+    """Single resume-vs-transcript discrepancy surfaced in the feedback report.
+
+    Always phrased constructively (coaching tone, not accusatory).  The list
+    is empty when every stated claim is adequately substantiated in the
+    live interview.
+    """
+
+    claim: Annotated[
+        str,
+        Field(
+            ...,
+            description="The specific skill / project / role statement from the resume.",
+        ),
+    ]
+    issue: Annotated[
+        str,
+        Field(
+            ...,
+            description=(
+                "Constructive one-sentence note: what was missing from the "
+                "live answer and why being ready to go deeper would help."
+            ),
+        ),
+    ]
+
+
 # ---------------------------------------------------------------------------
-# Module 1 — JD analysis
+# Module 1 — Onboarding (JD + Resume)
 # ---------------------------------------------------------------------------
 
 
 class AnalyzeJDRequest(BaseModel):
-    """Input payload for POST /api/v1/interviews/analyze-jd."""
+    """Input payload for POST /api/v1/interviews/analyze-jd (deprecated alias)."""
 
     job_title: Annotated[
         str,
@@ -63,8 +129,8 @@ class AnalyzeJDRequest(BaseModel):
     ]
 
 
-class AnalyzeJDResponse(BaseResponse):
-    """Response returned after role-context matrix extraction."""
+class OnboardResponse(BaseResponse):
+    """Response returned after onboarding: JD parse + resume parse merged."""
 
     interview_id: Annotated[
         str,
@@ -99,6 +165,20 @@ class AnalyzeJDResponse(BaseResponse):
             ),
         ),
     ]
+    candidate_highlights: Annotated[
+        list[str],
+        Field(
+            default_factory=list,
+            description=(
+                "3-5 resume-derived highlights surfaced to the frontend for "
+                "the candidate confirmation preview (top skills, most "
+                "impressive roles, and strongest projects)."
+            ),
+        ),
+    ]
+
+
+AnalyzeJDResponse = OnboardResponse
 
 
 # ---------------------------------------------------------------------------
@@ -264,8 +344,82 @@ class FeedbackReport(BaseResponse):
             description="Map of stringified turn_index -> rubric score breakdown.",
         ),
     ]
+    resume_gap_flags: Annotated[
+        list[ResumeGapFlag],
+        Field(
+            default_factory=list,
+            description=(
+                "Constructive list of resume claims that the candidate wasn't "
+                "quite ready to go deep on during the live interview.  Empty "
+                "when every stated claim is adequately substantiated."
+            ),
+        ),
+    ]
     generated_at: Annotated[
         datetime, Field(..., description="UTC timestamp of generation.")
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Module 2 (optional) — Tavus PAL conversation creation
+# ---------------------------------------------------------------------------
+
+
+class TavusConversationCreate(BaseResponse):
+    """Internal payload we send to Tavus POST /v2/conversations.
+
+    Most fields are populated from :class:`Settings`; the variable parts are
+    ``conversational_context`` (inline string) OR ``document_tags`` (RAG
+    fallback when the inline string exceeds ~2500 chars), plus the
+    interview-specific ``callback_url`` and ``metadata`` blob.
+    """
+
+    persona_id: Annotated[str, Field(...)]
+    face_id: Annotated[str | None, Field(default=None)]
+    conversational_context: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Inline per-candidate context string (~≤2500 chars).  Exactly "
+                "one of conversational_context / document_tags must be set."
+            ),
+        ),
+    ]
+    document_tags: Annotated[
+        list[str] | None,
+        Field(
+            default=None,
+            description=(
+                "RAG document tags uploaded via POST /v2/documents.  Used "
+                "when the Role + Candidate Context Matrix is too large to "
+                "fit inline."
+            ),
+        ),
+    ]
+    callback_url: Annotated[
+        str,
+        Field(
+            ...,
+            description="Webhook URL Tavus POSTs conversation events to.",
+        ),
+    ]
+    metadata: Annotated[
+        dict[str, Any],
+        Field(
+            default_factory=dict,
+            description="Interview_id + any other structured metadata echoed back on webhooks.",
+        ),
+    ]
+
+
+class TavusConversationResponse(BaseResponse):
+    """Minimal shape we expect back from Tavus POST /v2/conversations."""
+
+    conversation_id: Annotated[str, Field(...)]
+    room_url: Annotated[
+        str | None,
+        Field(default=None, description="Candidate-facing join URL when provided."),
     ]
 
 

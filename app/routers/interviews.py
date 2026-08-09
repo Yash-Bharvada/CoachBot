@@ -1,32 +1,39 @@
-"""Module 4 router — session metadata, /finalize, and cached /report.
+"""Module 4 router — session metadata, /finalize, /report, Tavus integration.
 
-Business logic lives in :mod:`app.services.feedback_service`; this module is
-the HTTP glue layer: dependency injection, rate limiting, status codes.
+Business logic lives in :mod:`app.services.feedback_service` and
+:mod:`app.services.tavus_service`; this module is the HTTP glue layer:
+dependency injection, rate limiting, status codes, webhook signature verification.
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import Depends, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.routing import APIRouter
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pydantic import BaseModel
 from structlog import get_logger
 
+from app.core.config import get_settings
 from app.core.database import get_database
-from app.core.exceptions import InterviewNotFoundError
+from app.core.exceptions import InterviewNotFoundError, SessionStateError
 from app.core.security import http_rate_limiter
 from app.models.schemas import (
     DifficultyLevel,
     FeedbackReport,
     FinalizeResponse,
     InterviewSessionSummary,
+    TavusConversationResponse,
 )
 from app.services.feedback_service import (
     fetch_cached_report,
     generate_feedback_report,
 )
+from app.services.tavus_service import create_tavus_conversation
 from app.websockets.connection_manager import connection_manager
 
 log = get_logger(__name__)
@@ -92,13 +99,132 @@ async def get_session_summary(
     )
 
 
+# ---------------------------------------------------------------------------
+# Tavus PAL: conversation + webhook (CHANGE 2)
+# ---------------------------------------------------------------------------
+
+
+class _TavusConversationRequest(BaseModel):
+    """Request body for POST /{interview_id}/conversation.
+
+    The ``callback_url`` is required (fully-qualified URL Tavus will POST
+    events to) so that deployments can override based on their environment
+    rather than hard-coding a single URL in Settings.
+    """
+
+    callback_url: str
+
+
+@router.post(
+    "/{interview_id}/conversation",
+    summary="Create a Tavus PAL video conversation for this interview",
+    description=(
+        "Formats the Role & Candidate Context Matrix into a tight per-candidate "
+        "string for Tavus's ``conversational_context`` field; if the matrix is "
+        "too large to fit inline (~2500 chars) it uploads a tagged Document "
+        "instead and passes ``document_tags`` so the PAL retrieves it via RAG. "
+        "Never writes candidate/JD details into the shared PAL system_prompt."
+    ),
+    response_model=TavusConversationResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        404: {"description": "Interview id does not exist."},
+        400: {
+            "description": (
+                "Tavus not configured (TAVUS_API_KEY / persona_id missing) or "
+                "the Tavus API returned a malformed response."
+            ),
+        },
+    },
+)
+async def create_conversation(
+    interview_id: str,
+    body: _TavusConversationRequest,
+    db: Annotated[AsyncIOMotorDatabase, Depends(get_database)],
+) -> TavusConversationResponse:
+    """Public entry point for Tavus conversation creation (CHANGE 2)."""
+    if not body.callback_url or not body.callback_url.startswith(("http://", "https://")):
+        raise SessionStateError(
+            "callback_url must be a fully-qualified http(s) URL.",
+            details={"callback_url": body.callback_url},
+        )
+    return await create_tavus_conversation(
+        interview_id, db, callback_url=body.callback_url
+    )
+
+
+@router.post(
+    "/tavus-webhook",
+    summary="Receive Tavus conversation webhook events",
+    description=(
+        "Verifies the ``X-Tavus-Signature`` header against the shared "
+        "TAVUS_WEBHOOK_SECRET before accepting any event.  Persists "
+        "status updates and transcript segments back to Mongo; the actual "
+        "per-turn scoring still happens in Module 3 once a turn is complete."
+    ),
+    status_code=status.HTTP_200_OK,
+)
+async def tavus_webhook(
+    request: Request,
+    db: Annotated[AsyncIOMotorDatabase, Depends(get_database)],
+    x_tavus_signature: Annotated[str | None, Header()] = None,
+) -> dict[str, str]:
+    """Minimal verified webhook receiver for Tavus status/transcript events."""
+    settings = get_settings()
+    raw_body = await request.body()
+    # --- Signature verification: HMAC-SHA256(secret, raw_body) == X-Tavus-Signature
+    if settings.tavus_webhook_secret:
+        if not x_tavus_signature:
+            raise HTTPException(status_code=401, detail="Missing Tavus signature header.")
+        expected = hmac.new(
+            settings.tavus_webhook_secret.encode("utf-8"),
+            msg=raw_body,
+            digestmod=hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(expected, x_tavus_signature.lower()):
+            raise HTTPException(status_code=401, detail="Tavus signature mismatch.")
+    try:
+        payload: dict[str, Any] = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
+    interview_id = None
+    metadata = payload.get("metadata") or {}
+    if isinstance(metadata, dict):
+        interview_id = metadata.get("interview_id")
+    if not interview_id:
+        conversation_id = payload.get("conversation_id")
+        if conversation_id:
+            doc = await db.interview_sessions.find_one(
+                {"tavus_conversation_id": str(conversation_id)},
+                {"interview_id": 1},
+            )
+            if doc:
+                interview_id = doc.get("interview_id")
+    event_name = str(payload.get("event_name") or payload.get("event") or "unknown")
+    log.info(
+        "tavus.webhook.received",
+        event=event_name,
+        interview_id=interview_id,
+        conversation_id=payload.get("conversation_id"),
+    )
+    # Ack: Tavus retries if it sees a non-2xx.
+    return {"status": "ok", "event": event_name}
+
+
+# ---------------------------------------------------------------------------
+# Finalize + report (Module 4)
+# ---------------------------------------------------------------------------
+
+
 @router.post(
     "/{interview_id}/finalize",
     summary="End the interview and generate a structured feedback report",
     description=(
         "Aggregates turn evaluations, runs a sentiment + filler-word analysis, "
-        "and generates model-answer comparisons for the weakest 2–3 turns.  "
-        "The report is cached so a subsequent GET /report call is free."
+        "cross-checks resume claims against the live transcript for "
+        "resume_gap_flags, and generates model-answer comparisons for the "
+        "weakest 2–3 turns.  The report is cached so a subsequent GET "
+        "/report call is free."
     ),
     response_model=FinalizeResponse,
     status_code=status.HTTP_201_CREATED,
@@ -117,6 +243,7 @@ async def finalize_interview(
         "interview.finalized",
         interview_id=interview_id,
         overall=report.overall_readiness,
+        resume_gap_flags=len(report.resume_gap_flags),
     )
     return FinalizeResponse(interview_id=interview_id, report=report)
 
