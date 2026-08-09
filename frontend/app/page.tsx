@@ -25,9 +25,9 @@ export default function Page() {
     <main className="min-h-screen overflow-hidden bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b border-border/70 bg-background/90 backdrop-blur-md">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-6 lg:px-10">
-          <Link href="#top" className="flex items-center gap-3 font-semibold tracking-tight" aria-label="Interview Prep Simulator home">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm text-primary-foreground">IP</span>
-            <span className="hidden sm:inline">Interview Prep Simulator</span>
+          <Link href="#top" className="flex items-center gap-3 font-semibold tracking-tight" aria-label="CoachBot home">
+            <img src="/coachbot-logo.png" alt="CoachBot Logo" className="h-9 w-9 rounded-lg object-contain" />
+            <span className="hidden sm:inline font-bold text-lg">CoachBot</span>
           </Link>
           <nav className="hidden items-center gap-8 text-sm text-muted-foreground md:flex">
             <Link href="#how-it-works" className="transition-colors hover:text-foreground">How it works</Link>
@@ -65,7 +65,7 @@ export default function Page() {
       <section className="border-y border-border bg-muted/30 px-6 py-5"><div className="mx-auto flex max-w-7xl flex-col items-center justify-center gap-3 text-center text-xs uppercase tracking-[0.16em] text-muted-foreground sm:flex-row sm:gap-6"><span>Powered by</span><span className="font-semibold tracking-normal text-foreground">Tavus CVI</span><span className="hidden h-1 w-1 rounded-full bg-accent sm:block" /><span className="font-semibold tracking-normal text-foreground">Groq</span></div></section>
 
       <section className="px-6 py-24 lg:px-10"><div className="mx-auto flex max-w-5xl flex-col items-center rounded-[2rem] bg-primary px-6 py-16 text-center text-primary-foreground sm:px-12"><p className="eyebrow text-accent-foreground">Your next interview starts here</p><h2 className="mt-5 max-w-2xl font-serif text-4xl leading-tight text-balance sm:text-5xl">You do not need more advice. You need a room to practice in.</h2><Link href="/onboarding" className="mt-8 inline-flex items-center gap-2 rounded-full bg-card px-6 py-3 font-medium text-foreground transition-transform hover:-translate-y-0.5">Start Your Mock Interview <ArrowRight className="h-4 w-4" /></Link></div></section>
-      <footer className="border-t border-border px-6 py-8 lg:px-10"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-4 text-sm text-muted-foreground sm:flex-row sm:items-center"><span className="font-medium text-foreground">Interview Prep Simulator</span><div className="flex gap-6"><Link href="#how-it-works" className="hover:text-foreground">How it works</Link><Link href="#features" className="hover:text-foreground">Features</Link></div></div></footer>
+      <footer className="border-t border-border px-6 py-8 lg:px-10"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-4 text-sm text-muted-foreground sm:flex-row sm:items-center"><span className="font-medium text-foreground font-bold">CoachBot</span><div className="flex gap-6"><Link href="#how-it-works" className="hover:text-foreground">How it works</Link><Link href="#features" className="hover:text-foreground">Features</Link></div></div></footer>
       <DemoDialog open={demoOpen} onOpenChange={setDemoOpen} />
     </main>
   )

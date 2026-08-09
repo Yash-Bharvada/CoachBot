@@ -71,10 +71,8 @@ export default function OnboardingPage() {
       <header className="border-b border-border/70 bg-background/90">
         <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-6">
           <a href="/" className="flex items-center gap-3 font-semibold tracking-tight">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm text-primary-foreground">
-              IP
-            </span>
-            <span>Interview Prep Simulator</span>
+            <img src="/coachbot-logo.png" alt="CoachBot Logo" className="h-9 w-9 rounded-lg object-contain" />
+            <span className="font-bold text-lg">CoachBot</span>
           </a>
           <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">Step 1 / 3</span>
         </div>
