@@ -101,10 +101,8 @@ function InterviewContent() {
         {/* Header */}
         <header className="flex items-center justify-between border-b border-primary-foreground/10 px-5 py-4 sm:px-7">
           <a href="/" className="flex items-center gap-3 font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-sm text-accent-foreground font-bold">
-              IP
-            </span>
-            <span className="hidden sm:inline font-serif text-lg">Interview Prep Simulator</span>
+            <img src="/coachbot-logo.png" alt="CoachBot Logo" className="h-8 w-8 rounded-lg object-contain" />
+            <span className="hidden sm:inline font-serif text-lg font-bold">CoachBot</span>
           </a>
 
           <div className="flex items-center gap-4 text-xs">

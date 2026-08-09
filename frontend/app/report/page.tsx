@@ -154,7 +154,7 @@ function ReportContent() {
         <div className="flex items-center justify-between">
           <div>
             <span className="text-xs font-bold uppercase tracking-widest text-slate-500">
-              Interview Prep Simulator
+              CoachBot
             </span>
             <h1 className="text-2xl font-serif font-bold text-slate-900 mt-1">
               Executive Performance Evaluation Report
@@ -407,10 +407,8 @@ export default function ReportPage() {
       <header className="no-print print:hidden border-b border-border/70">
         <div className="mx-auto flex h-20 max-w-6xl items-center justify-between px-6">
           <Link href="/" className="flex items-center gap-3 font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm text-primary-foreground">
-              IP
-            </span>
-            <span>Interview Prep Simulator</span>
+            <img src="/coachbot-logo.png" alt="CoachBot Logo" className="h-8 w-8 rounded-lg object-contain" />
+            <span className="font-bold text-lg">CoachBot</span>
           </Link>
           <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
             Feedback report
