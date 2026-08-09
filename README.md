@@ -1,15 +1,23 @@
-# Interview Prep Simulator — Backend
+<p align="center">
+  <img src="docs/assets/coachbot-logo.png" alt="CoachBot Logo" width="220" />
+</p>
 
-Real-time, voice-enabled AI mock interview platform built on FastAPI + MongoDB.
-Streams audio bidirectionally over a single WebSocket: client speech → Groq
-Whisper (STT) → Groq LLM (calm, professional interviewer persona) → Edge-TTS
-/ ElevenLabs (TTS) → interviewer audio back to the candidate.  After every
-candidate turn, an LLM-as-judge scores the answer on a fixed rubric, and a
-deterministic difficulty state machine adapts the next question.  At session
-end, the `/finalize` endpoint aggregates every turn into a structured
-feedback report with model-answer comparisons for the weakest 2–3 answers.
+<h1 align="center">CoachBot</h1>
+<p align="center"><b>Live AI Mock Interviews with Adaptive Feedback & Real-Time Tavus Video</b></p>
 
-## Project Layout
+<p align="center">
+  <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-blue?style=for-the-badge&logo=python">
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white">
+  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white">
+  <img alt="MongoDB" src="https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white">
+</p>
+
+---
+
+## 🧭 Overview
+
+**CoachBot** is a real-time, voice-enabled AI mock interview platform built on **FastAPI**, **Next.js**, **Tavus AI**, and **MongoDB**.
+It grounds the interview in your target role and resume, streams audio bidirectionally over a single WebSocket, conducts live interactive video sessions via Tavus AI, scores every answer against a fixed rubric, and delivers an executive feedback report.
 
 ```
 /app
