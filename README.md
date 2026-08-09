@@ -65,9 +65,9 @@ Built on **FastAPI**, **Next.js 16 (Turbopack)**, **Tavus AI Avatar API**, **Gro
 |---|---|
 | **Event** | **HackMatrix 2026 – Round 2** |
 | **Project Title** | **CoachBot** (Live AI Mock Interviews with Adaptive Feedback) |
-| **Team Name** | **CodeCraft** |
+| **Team Name** | **Aura Spectre** |
 | **Team Leader** | **Yash Bharvada** (3rd-year CS & Engineering - AI/ML at CSPIT CHARUSAT) |
-| **Contact Email** | `yashb.dev@gmail.com` |
+| **Contact Email** | `23cs006@charusat.edu.in` |
 | **GitHub Repository** | [https://github.com/Yash-Bharvada/CoachBot](https://github.com/Yash-Bharvada/CoachBot) *(Public)* |
 | **Live Local Workspace** | `http://localhost:3000` (Frontend) / `http://localhost:8000` (Backend) |
 | **Demo Video Link** | `https://youtu.be/demo_session_coachbot` *(Submitted)* |
