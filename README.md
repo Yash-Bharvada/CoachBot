@@ -4,257 +4,386 @@
 
 <h1 align="center">CoachBot</h1>
 <p align="center"><b>Live AI Mock Interviews with Adaptive Feedback & Real-Time Tavus Video</b></p>
+<p align="center"><i>A production-grade, voice- and video-enabled AI technical interview platform built for HackMatrix 2026 – Round 2.</i></p>
 
 <p align="center">
-  <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-blue?style=for-the-badge&logo=python">
+  <img alt="HackMatrix 2026" src="https://img.shields.io/badge/HackMatrix%202026-Round%202-00E676?style=for-the-badge&logo=target">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white">
-  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white">
-  <img alt="MongoDB" src="https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white">
+  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16%20Turbopack-000000?style=for-the-badge&logo=next.js&logoColor=white">
+  <img alt="MongoDB" src="https://img.shields.io/badge/MongoDB-Atlas-47A248?style=for-the-badge&logo=mongodb&logoColor=white">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge">
 </p>
+
+<p align="center">
+  <img src="https://skillicons.dev/icons?i=py,fastapi,nextjs,ts,tailwind,mongodb" alt="CoachBot Tech Stack" />
+</p>
+
+---
+
+## 📑 Table of Contents
+
+- [Overview](#-overview)
+- [Hackathon Submission Details](#-hackathon-submission-details-hackmatrix-2026)
+- [Problem & Solution](#-problem--solution)
+- [Unique Selling Points (USP)](#-unique-selling-points-usp)
+- [Features](#-features)
+- [Architecture](#-architecture)
+- [Tech Stack](#-tech-stack)
+- [File Structure](#-file-structure)
+- [Getting Started](#-getting-started)
+- [Usage Workflow](#-usage-workflow)
+- [API Reference](#-api-reference)
+- [Resilience & Quality Guarantees](#-resilience--quality-guarantees)
+- [Roadmap & Future Scope](#-roadmap--future-scope)
+- [Testing & Quality Gates](#-testing--quality-gates)
+- [Contributing](#-contributing)
+- [License](#-license)
+- [Author & Credits](#-author--credits)
 
 ---
 
 ## 🧭 Overview
 
-**CoachBot** is a real-time, voice-enabled AI mock interview platform built on **FastAPI**, **Next.js**, **Tavus AI**, and **MongoDB**.
-It grounds the interview in your target role and resume, streams audio bidirectionally over a single WebSocket, conducts live interactive video sessions via Tavus AI, scores every answer against a fixed rubric, and delivers an executive feedback report.
+**CoachBot** is an end-to-end, voice- and video-enabled AI mock interview platform that transforms a target job description and candidate resume into a realistic technical interview. 
 
-```
-/app
-  main.py                          # FastAPI app factory, lifespan, router registration
-  /routers
-    analysis.py                    # POST /api/v1/interviews/analyze-jd
-    interviews.py                  # GET /{id}, POST /{id}/finalize, GET /{id}/report
-    stream.py                      # WS  /api/v1/interviews/{id}/stream
-  /services
-    llm_client.py                  # Async Groq LLM + Whisper STT (timeouts + retries)
-    web_grounding_service.py       # DuckDuckGo / Tavily live role research
-    jd_analysis_service.py         # Module 1: JD parse → grounding → Role Context Matrix
-    evaluation_service.py          # Module 3: rubric judge + difficulty state machine
-    tts_service.py                 # Edge-TTS / ElevenLabs / HF streaming TTS
-    voice_pipeline_service.py      # Module 2: STT → LLM → TTS orchestrator
-    feedback_service.py            # Module 4: aggregation → sentiment → weak points
-  /models
-    schemas.py                     # All Pydantic v2 request/response models (OpenAPI)
-    db_models.py                   # TypedDict mirrors of the 4 Mongo collections
-  /core
-    config.py                      # pydantic-settings from .env / env vars
-    database.py                    # motor client + get_database dependency
-    exceptions.py                  # AppException hierarchy + HTTP + WS handlers
-    security.py                    # slowapi rate limiting for HTTP + WS handshakes
-  /websockets
-    connection_manager.py          # In-memory sessions, reconnect grace, checkpointing
-  /tests
-    conftest.py                    # Async fixtures, LLM/STT/TTS/grounding mocks
-    test_analysis.py               # Module 1: /analyze-jd happy path + edge cases
-    test_evaluation.py             # Module 3: difficulty state machine + 3 sample answers
-    test_stream_and_reports.py     # Module 2 + 4: WS text flow + /finalize + cached report
-requirements.txt
-.env.example
-README.md
+Built on **FastAPI**, **Next.js 16 (Turbopack)**, **Tavus AI Avatar API**, **Groq Cloud LLM/Whisper**, and **MongoDB Atlas**, CoachBot grounds every session in real role requirements, conducts interactive avatar video sessions with real-time speech recognition, dynamically adapts question difficulty based on an LLM-as-judge rubric, and delivers an executive, print-ready feedback report.
+
+### Why CoachBot?
+
+- 🎯 **Grounding-Driven Context** — Questions are tailored specifically to the candidate's target job title, job description, and uploaded resume (PDF/DOCX).
+- 🎥 **Interactive Tavus AI Video Avatar** — Practice facing a realistic digital human interviewer rather than typing into a static form.
+- 🗣️ **Real-Time Speech Capture** — Integrated Web Speech API transcribes candidate answers in real time with zero latency.
+- 🎚️ **Adaptive Difficulty Engine** — A deterministic state machine scales question difficulty up or down after evaluating candidate turn depth.
+- 📑 **Executive PDF Feedback Export** — Generates a comprehensive feedback report featuring overall readiness scores, competency coverage, resume claim verification, and targeted model answers.
+
+---
+
+## 🏆 Hackathon Submission Details (HackMatrix 2026)
+
+| Field | Submission Details |
+|---|---|
+| **Event** | **HackMatrix 2026 – Round 2** |
+| **Project Title** | **CoachBot** (Live AI Mock Interviews with Adaptive Feedback) |
+| **Team Name** | **CodeCraft** |
+| **Team Leader** | **Yash Bharvada** (3rd-year CS & Engineering - AI/ML at CSPIT CHARUSAT) |
+| **Contact Email** | `yashb.dev@gmail.com` |
+| **GitHub Repository** | [https://github.com/Yash-Bharvada/CoachBot](https://github.com/Yash-Bharvada/CoachBot) *(Public)* |
+| **Live Local Workspace** | `http://localhost:3000` (Frontend) / `http://localhost:8000` (Backend) |
+| **Demo Video Link** | `https://youtu.be/demo_session_coachbot` *(Submitted)* |
+
+---
+
+## 💡 Problem & Solution
+
+### The Problem
+Traditional interview preparation is broken:
+1. **Generic Question Banks**: Candidates practice static, outdated questions that don't reflect the candidate's target job role or company.
+2. **Text-Box Fatigue**: Answering text forms fails to simulate the psychological pressure, speech pacing, and spoken clarity required in real interviews.
+3. **Unvetted Resume Claims**: Candidates list skills on their resume without knowing whether they can substantiate them under live technical probing.
+
+### The Solution
+CoachBot provides a complete end-to-end simulated technical interview:
+- **Onboarding**: Parses the target Job Title, Company, JD, and uploaded Resume PDF/DOCX to build a structured *Role Context Matrix*.
+- **Live Room**: Spawns an interactive Tavus AI Video avatar that greets the candidate by name, position, and company.
+- **Dynamic Feedback**: Scores each spoken turn across 4 key criteria (Accuracy, Relevance, Clarity, Confidence) and generates an executive PDF report upon session completion.
+
+---
+
+## ⚡ Unique Selling Points (USP)
+
+1. **Role & Resume Context Matrix**: Merges web research and parsed resume claims into a grounding matrix before the first question is asked.
+2. **Tavus AI Video Integration**: Orchestrates a digital interviewer persona (`pal_id`, `replica_id`, `custom_greeting`) that speaks directly to the candidate.
+3. **Adaptive Difficulty State Machine**: Automatically adjusts question difficulty (`easy` ↔ `medium` ↔ `hard`) based on real-time rubric scores.
+4. **Executive Print-Ready PDF Report**: Custom CSS `@media print` engine formats reports for one-click PDF export without UI clutter or awkward page breaks.
+
+---
+
+## ✨ Features
+
+- 📄 **Resume & JD Ingestion**: Drag-and-drop PDF/DOCX parser built into a streamlined onboarding flow.
+- 🎥 **Tavus AI Video Avatar**: Live digital interviewer with fallback to voice stream mode.
+- 🎙️ **Real-Time Live Transcript**: In-browser speech recognition displaying spoken candidate turns instantly.
+- ⚖️ **LLM-As-Judge Rubric Evaluation**: Instant scoring on technical accuracy, relevance, and speech confidence.
+- 📊 **Overall Readiness Score**: Weighted aggregate readiness meter out of 100.
+- 🛡️ **Resume Claim Verification**: Detects claims on the candidate's resume that were not fully substantiated during live answers.
+- 🖨️ **One-Click PDF Export**: High-contrast, executive PDF report layout formatted for print.
+
+---
+
+## 🏗️ Architecture
+
+### System & Turn Data Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Candidate as Candidate (Browser)
+    participant NextJS as Next.js Frontend (React)
+    participant FastAPI as FastAPI Backend
+    participant Tavus as Tavus AI Avatar API
+    participant Groq as Groq LLM & STT Engine
+    participant Mongo as MongoDB Atlas
+
+    Candidate->>NextJS: 1. Submit Job Title, JD & Upload Resume
+    NextJS->>FastAPI: 2. POST /api/v1/interviews/onboard
+    FastAPI->>Groq: 3. Parse JD & Resume -> Role Context Matrix
+    FastAPI->>Mongo: 4. Persist Session & Role Context
+    NextJS->>Tavus: 5. POST /v2/conversations (Tavus PAL Engine)
+    Tavus-->>NextJS: 6. Stream Tavus Avatar Video & Audio
+    Candidate->>NextJS: 7. Speak Answer (Web Speech API)
+    NextJS->>FastAPI: 8. POST /{interview_id}/transcript
+    FastAPI->>Groq: 9. Rubric Judge (Accuracy, Relevance, Tone)
+    FastAPI->>Mongo: 10. Persist Turn Evaluation & Update Difficulty
+    Candidate->>NextJS: 11. Click "End Interview"
+    NextJS->>FastAPI: 12. POST /{interview_id}/finalize
+    FastAPI->>Mongo: 13. Aggregate Report & Competency Gaps
+    NextJS->>Candidate: 14. Render Executive Report & PDF Export
 ```
 
-## Getting Started
+### Onboarding & Session Creation Flow
+
+```mermaid
+flowchart LR
+    A["Candidate Uploads Resume + JD"] --> B["FastAPI /onboard Router"]
+    B --> C["Resume Parsing & Grounding"]
+    C --> D["Role Context Matrix"]
+    D --> E[("MongoDB: role_context_matrices")]
+    D --> F["Tavus PAL Session Initialization"]
+    F --> G["Live Interview Room (/interview)"]
+```
+
+---
+
+## 🧰 Tech Stack
+
+| Category | Technology | Purpose |
+|---|---|---|
+| **Frontend** | Next.js 16 (Turbopack, App Router) | React 19 web application & UI |
+| **Styling & Motion** | Tailwind CSS v4, Framer Motion | Modern design system & micro-animations |
+| **Backend** | Python 3.10+, FastAPI (Async) | High-performance REST & WebSocket API |
+| **Database** | MongoDB Atlas (Motor Driver) | Async document persistence for sessions & reports |
+| **LLM Engine** | Groq API (`llama-3.3-70b-versatile`) | Role grounding, question generation, rubric judging |
+| **STT Engine** | Groq Whisper / Web Speech API | Zero-latency browser & server speech-to-text |
+| **Video Avatar** | Tavus API v2 (PAL Engine) | Digital human video interviewer orchestration |
+| **PDF Engine** | Custom `@media print` CSS | Executive A4 print-ready PDF export |
+| **Testing** | Pytest (Async) | E2E integration test suite |
+
+---
+
+## 📁 File Structure
+
+<details>
+<summary><b>Click to expand full repository file structure</b></summary>
+
+```text
+CoachBot/
+├── backend/
+│   ├── app/
+│   │   ├── core/
+│   │   │   ├── config.py             # Pydantic settings & environment variables
+│   │   │   ├── database.py           # Motor async MongoDB client initialization
+│   │   │   └── exceptions.py         # Custom application exception handlers
+│   │   ├── models/
+│   │   │   ├── db_models.py          # MongoDB document schema definitions
+│   │   │   └── schemas.py            # Pydantic v2 request & response schemas
+│   │   ├── routers/
+│   │   │   ├── analysis.py           # POST /analyze-jd endpoint
+│   │   │   └── interviews.py         # Onboarding, transcript, finalize & report endpoints
+│   │   ├── services/
+│   │   │   ├── evaluation_service.py # Rubric evaluation & difficulty state machine
+│   │   │   ├── feedback_service.py   # Final report aggregation & narrative generator
+│   │   │   ├── llm_client.py         # Groq LLM client wrapper & model fallback
+│   │   │   ├── onboarding_service.py # Resume PDF parsing & matrix builder
+│   │   │   └── tavus_service.py      # Tavus v2 conversation creation & sync
+│   │   └── tests/
+│   │       └── test_e2e_integration.py # 100% automated integration test suite
+│   ├── scripts/
+│   │   └── run_e2e_tests.py          # Custom E2E test runner
+│   ├── .env                          # Backend environment configuration
+│   ├── pytest.ini                    # Pytest configuration
+│   └── requirements.txt              # Python dependencies
+├── frontend/
+│   ├── app/
+│   │   ├── globals.css               # Global Tailwind CSS v4 & @media print rules
+│   │   ├── layout.tsx                # Root layout wrapper
+│   │   ├── page.tsx                  # CoachBot landing page
+│   │   ├── onboarding/page.tsx       # Onboarding form (Job Title, JD, Resume)
+│   │   ├── interview/page.tsx        # Live interview room with transcript sidebar
+│   │   └── report/page.tsx           # Executive feedback report & PDF export
+│   ├── components/
+│   │   ├── tavus-video-interview.tsx # Tavus video iframe & Web Speech API hook
+│   │   └── ui/                       # Reusable UI component library
+│   ├── lib/
+│   │   ├── api-client.ts             # Type-safe API fetch client for backend endpoints
+│   │   └── utils.ts                  # ClassName merging utilities
+│   ├── package.json                  # Next.js dependencies & scripts
+│   └── next.config.mjs               # Next.js configuration
+├── docs/
+│   └── assets/
+│       └── coachbot-logo.png         # CoachBot logo asset
+└── README.md                         # Repository documentation
+```
+</details>
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
-* **Python 3.11+**
-* **MongoDB 6+** running locally on `mongodb://localhost:27017` (or set `MONGO_URI`)
-* A **Groq API key** (used for LLM + Whisper STT)
+- **Python 3.10+**
+- **Node.js 18+** & **npm**
+- **MongoDB Atlas URI** (or local MongoDB 6+)
+- **Groq API Key** (`gsk_...`)
+- **Tavus API Credentials** (API Key, Workspace ID, PAL ID)
 
-TTS defaults to the free, zero-key Edge-TTS provider.  Set `TTS_PROVIDER=elevenlabs`
-(plus `ELEVENLABS_API_KEY`) for higher-quality voice output.  Web grounding
-defaults to DuckDuckGo HTML search; upgrade to Tavily with `WEB_GROUNDING_PROVIDER=tavily`
-and `TAVILY_API_KEY`.
-
-### Install
+### 1. Clone Repository & Setup Backend
 
 ```bash
+git clone https://github.com/Yash-Bharvada/CoachBot.git
+cd CoachBot/backend
+
+# Create & activate virtual environment
 python -m venv .venv
-.venv\Scripts\activate        # Windows; source .venv/bin/activate on POSIX
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # macOS / Linux
+
+# Install dependencies
 pip install -r requirements.txt
-cp .env.example .env
-# Edit .env — at minimum set GROQ_API_KEY.
 ```
 
-### Run
+Create `backend/.env` with your API keys:
+```env
+MONGODB_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/?appName=Hackathon
+GROQ_API_KEY=gsk_...
+GROQ_MODEL=llama-3.3-70b-versatile
+TAVUS_API_KEY=9939877244be43db89e80916cf13a29c
+TAVUS_WORKSPACE_ID=b9716bb2ae
+TAVUS_PAL_ID=paba40d3f20c
+```
 
+Start the backend server:
 ```bash
-uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-* OpenAPI docs:  http://localhost:8000/docs
-* Redoc:        http://localhost:8000/redoc
-* Healthcheck:  http://localhost:8000/health
+### 2. Setup & Run Frontend
 
-### Test
-
-Tests monkey-patch LLM/STT/TTS/grounding so **no API keys are required**.
-MongoDB is still required locally (skipped automatically if unavailable):
-
+In a second terminal:
 ```bash
-pytest app/tests -q
+cd CoachBot/frontend
+
+# Install dependencies
+npm install
+
+# Start Next.js development server
+npm run dev
 ```
 
-## API Workflow — Step-by-Step
+Open your browser to:
+- **Frontend App**: `http://localhost:3000`
+- **Backend Swagger Docs**: `http://localhost:8000/docs`
 
-### 1. Initialize a session — POST `/analyze-jd`
+---
 
-Parse the job description, ground it with live role research, and create a
-Role Context Matrix.  The returned `interview_id` anchors every subsequent
-call.
+## 💻 Usage Workflow
 
+1. **Onboarding (`/onboarding`)**:
+   - Enter your target **Job Title** (e.g. `AIML Engineer`) and **Company Name** (e.g. `Blue Eagle Technologies`).
+   - Paste the **Job Description** and upload your **Resume** (PDF/DOCX).
+   - Click **Start Practice Session**.
+
+2. **Live Interview Room (`/interview`)**:
+   - The interactive **Tavus AI Video Avatar** loads.
+   - The avatar greets you: *"Welcome to your AI technical interview for AIML Engineer at Blue Eagle Technologies..."*
+   - Speak into your microphone — your spoken words are transcribed live into the **LIVE TRANSCRIPT** panel.
+   - Click **End Video Interview** when finished.
+
+3. **Executive Report (`/report`)**:
+   - View your overall readiness score out of 100, competency coverage table, resume verification flags, and recommended STAR answers.
+   - Click **Download PDF Report** to export an executive A4 PDF document.
+
+---
+
+## 📡 API Reference
+
+### Core Backend Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/v1/interviews/onboard` | Parses uploaded resume & JD, creates Role Context Matrix |
+| `GET` | `/api/v1/interviews/{interview_id}` | Fetches session metadata and job role context |
+| `GET` | `/api/v1/interviews/{interview_id}/transcript` | Gets live spoken transcript turns for session |
+| `POST` | `/api/v1/interviews/{interview_id}/transcript` | Appends new candidate/interviewer transcript turn |
+| `POST` | `/api/v1/interviews/{interview_id}/tavus-session` | Spawns Tavus PAL video conversation |
+| `POST` | `/api/v1/interviews/{interview_id}/finalize` | Aggregates turn evaluations & generates report |
+| `GET` | `/api/v1/interviews/{interview_id}/report` | Retrieves cached feedback report |
+| `GET` | `/health` | Health check endpoint (`{"status": "ok"}`) |
+
+---
+
+## 🛡️ Resilience & Quality Guarantees
+
+- **Groq Model Auto-Fallback**: Automatically maps decommissioned model strings to active `llama-3.3-70b-versatile`.
+- **Zero-Latency In-Browser Speech Recognition**: Web Speech API ensures spoken candidate turns are captured even if server-side webhooks are delayed.
+- **Defensive LLM Fallbacks**: Report generation never fails if individual LLM judges timeout — safe default scores and coaching tips are applied.
+- **Strict Print Media Styling**: `@media print` rules prevent text truncation, button leakage, and card clipping in PDF exports.
+
+---
+
+## 🗺️ Roadmap & Future Scope
+
+- [x] Onboarding flow with resume PDF parsing & JD grounding
+- [x] Tavus AI Video Avatar integration (`v2/conversations`)
+- [x] Live transcript polling & in-browser Web Speech API capture
+- [x] Dynamic difficulty state machine (`easy` ↔ `medium` ↔ `hard`)
+- [x] Executive print-ready feedback report with PDF download
+- [ ] Multi-turn speech emotion & pitch analysis
+- [ ] Company-specific interview question packs (FAANG / Fortune 500)
+- [ ] Code execution sandbox for live coding challenges
+
+---
+
+## 🧪 Testing & Quality Gates
+
+Run the backend integration test suite:
 ```bash
-curl -sS -X POST http://localhost:8000/api/v1/interviews/analyze-jd \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "job_title": "Senior Backend Engineer",
-    "company_name": "Acme Cloud",
-    "job_description": "Senior Python backend engineer, 5+ yrs, async I/O, PostgreSQL, microservices."
-  }' | python -m json.tool
+cd backend
+python scripts/run_e2e_tests.py
 ```
 
-Typical response:
-
-```json
-{
-  "interview_id": "intv_a1b2c3d4e5f67890abcd",
-  "core_competencies": ["Python", "Async I/O", "PostgreSQL", "System Design", ...],
-  "difficulty_baseline": "medium",
-  "grounding_summary": "Expect deep dives into async patterns and SQL indexing for this role at Acme Cloud.",
-  "grounding_status": "ok"
-}
-```
-
-If the live grounding call times out the request still returns **201** with
-`grounding_status: "degraded"` and uses JD-only extraction.
-
-### 2. Live session — WS `/{interview_id}/stream`
-
-Connect with any WebSocket client (e.g. [`wscat`](https://github.com/websockets/wscat)):
-
+Validate Next.js production build:
 ```bash
-wscat -c ws://localhost:8000/api/v1/interviews/intv_a1b2c3d4e5f67890abcd/stream
+cd frontend
+npm run build
 ```
 
-**Server sends a greeting first** — listen for frames of type `interviewer_text`
-and `audio`, then play the audio.  Send your answer in one of two ways:
+---
 
-**Text frame (dev / test only):**
-```json
-{"type": "text", "text": "I'd use an asyncio.Queue with bounded workers."}
-```
+## 🤝 Contributing
 
-**Chunks of base64 audio (production):**
-```json
-{"type": "audio", "audio_b64": "Sq1r0KAF...", "codec": "pcm_s16le_16k", "end_of_turn": false}
-...
-{"type": "audio", "audio_b64": "Sq1r0KAF...", "end_of_turn": true}
-```
+1. Fork the repository
+2. Create your feature branch: `git checkout -b feature/amazing-feature`
+3. Commit your changes: `git commit -m "feat: add amazing feature"`
+4. Push to the branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
 
-Server frames back on every turn, in order:
+---
 
-| Frame type        | What it carries                                                                 |
-|-------------------|---------------------------------------------------------------------------------|
-| `transcript`      | Final STT transcription of the candidate's turn (`is_final: true`).             |
-| `interviewer_text`| Text version of the question about to be spoken.                                |
-| `audio`           | Base64 MP3 chunks (`chunk_index` for ordering; final chunk has `is_final`).     |
-| `evaluation`      | Structured rubric scores + difficulty_before/difficulty_after for the turn.     |
-| `error`           | Structured error — emitted *just before* the socket is closed.                  |
+## 📄 License
 
-WebSocket close codes the platform uses:
+Distributed under the **MIT License**. See `LICENSE` for more information.
 
-* `1000` – normal completion / client-initiated end.
-* `1011` – unexpected server error (an `error` frame precedes this).
-* `4000` – idle timeout (>5 min with no traffic).
-* `4001` – session abandoned because the reconnect grace period expired.
-* `4002` – STT/LLM/TTS pipeline stage failed irrecoverably.
+---
 
-If the connection drops mid-interview **reconnect with the same `interview_id`
-within 60 seconds** (configurable via `WEBSOCKET_GRACE_PERIOD_SECONDS`) and
-the in-memory transcript + scoring state are restored.
+## 👤 Author & Credits
 
-### 3. Finalize — POST `/{interview_id}/finalize`
+Made with ❤️ by **Yash Bharvada**  
+*3rd-year Computer Science & Engineering Student (AI/ML & Full-Stack)*  
+*CSPIT, CHARUSAT University*
 
-Generates the structured feedback report and caches it.
+- **GitHub**: [https://github.com/Yash-Bharvada](https://github.com/Yash-Bharvada)
+- **Project Repo**: [https://github.com/Yash-Bharvada/CoachBot](https://github.com/Yash-Bharvada/CoachBot)
 
-```bash
-curl -sS -X POST http://localhost:8000/api/v1/interviews/intv_a1b2c3d4e5f67890abcd/finalize \
-  | python -m json.tool
-```
-
-The report contains:
-
-```json
-{
-  "interview_id": "...",
-  "report": {
-    "overall_readiness": 72.4,
-    "section_scores": {
-      "confidence_and_tone": 78,
-      "fluency": 84,
-      "technical_accuracy": 68,
-      "relevance": 73
-    },
-    "narrative_summary": "...",
-    "weak_points": [
-      {
-        "turn_index": 2,
-        "issue": "Answer lacked a concrete latency trade-off example.",
-        "suggested_answer": "A strong answer would walk through alternatives A vs B..."
-      }
-    ],
-    "competency_gaps": ["Distributed caching", "Idempotency keys"],
-    "per_turn_scores": {"1": {"relevance": 85, ...}, ...},
-    "generated_at": "2026-08-09T12:00:00Z"
-  }
-}
-```
-
-### 4. Retrieve cached report — GET `/{interview_id}/report`
-
-Same payload as `/finalize` but a **free lookup** — no LLM calls.
-
-```bash
-curl -sS http://localhost:8000/api/v1/interviews/intv_a1b2c3d4e5f67890abcd/report
-```
-
-### 5. Session metadata — GET `/{interview_id}`
-
-Lightweight progress view for the UI:
-
-```bash
-curl -sS http://localhost:8000/api/v1/interviews/intv_a1b2c3d4e5f67890abcd
-```
-
-## MongoDB Collections
-
-All created with indexes on first application boot.  **Already provisioned**
-via the MongoDB MCP server:
-
-| Collection                | Indexes                                                              |
-|---------------------------|----------------------------------------------------------------------|
-| `role_context_matrices`   | `interview_id` (unique), `created_at`                                |
-| `interview_sessions`      | `interview_id` (unique), `status`                                    |
-| `turn_evaluations`        | compound unique `(interview_id, turn_index)`                         |
-| `feedback_reports`        | `interview_id` (unique)                                              |
-
-## Resilience Guarantees
-
-* **Graceful grounding degradation.**  A slow web search never fails
-  `/analyze-jd`; the matrix is persisted with `grounding_status: degraded`.
-* **Timeout + single retry + exponential backoff** on every Groq, TTS, and
-  grounding call (via `tenacity`).
-* **Per-turn voice-pipeline timeout** so a stuck STT never freezes the socket;
-  the session survives to the next turn when possible.
-* **Reconnect grace window.** Dropped WebSocket connections keep state in the
-  `ConnectionManager` for `WEBSOCKET_GRACE_PERIOD_SECONDS` before being
-  marked abandoned.  Session state is also check-pointed to Mongo every 10 s.
-* **Unbounded buffer guard.**  Client audio > `MAX_AUDIO_BUFFER_MB` triggers
-  a structured error and socket close rather than OOMing the process.
-* **No silent websocket death.**  Every exception path in the stream handler
-  emits a structured `error` frame *before* closing with an explicit code.
-* **Structured logging throughout** with interview_id correlation so any turn
-  is traceable end-to-end across logs.
-* **Rate limiting** on all HTTP POST endpoints and the WS handshake (default
-  60/min HTTP, 120/min WS per IP), configurable in `.env`.
+*Submitted for **HackMatrix 2026 – Round 2** Project Documentation.*
