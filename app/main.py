@@ -19,6 +19,7 @@ from app.core.database import close_mongo_connection, open_mongo_connection
 from app.core.exceptions import AppException, app_exception_handler
 from app.core.security import start_sweeper, stop_sweeper
 from app.routers import analysis, interviews, stream
+from app.services.tavus_service import close_tavus_client
 from app.websockets.connection_manager import connection_manager
 
 log: BoundLogger = get_logger(__name__)
@@ -38,9 +39,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         "app.started",
         port=settings.port,
         mongo_uri_host=settings.mongo_uri.split("@")[-1],
+        tavus_configured=bool(settings.tavus_api_key),
     )
     yield
     await connection_manager.stop()
+    await close_tavus_client()
     await close_mongo_connection()
     stop_sweeper()
     log.info("app.stopped")
@@ -53,12 +56,14 @@ def create_app() -> FastAPI:
         title="Interview Prep Simulator API",
         description=(
             "Real-time voice-enabled AI mock interview platform.  Start by "
-            "POST-ing a JD to /api/v1/interviews/analyze-jd to receive an "
-            "interview_id, then connect to the websocket stream to begin the "
-            "live conversation.  When the session ends POST /finalize to "
-            "receive a structured feedback report."
+            "POST-ing a multipart form with job_title, job_description, and a "
+            "PDF/DOCX resume to /api/v1/interviews/onboard to receive an "
+            "interview_id and candidate_highlights, then connect to the "
+            "websocket stream or create a Tavus PAL video conversation to "
+            "begin the live interview.  When the session ends POST /finalize "
+            "to receive a structured feedback report with resume_gap_flags."
         ),
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
     )
 
@@ -69,17 +74,17 @@ def create_app() -> FastAPI:
     app.include_router(
         analysis.router,
         prefix="/api/v1/interviews",
-        tags=["JD Analysis"],
+        tags=["Onboarding (JD + Resume)"],
     )
     app.include_router(
         interviews.router,
         prefix="/api/v1/interviews",
-        tags=["Interview Sessions & Reports"],
+        tags=["Interview Sessions, Reports & Tavus"],
     )
     app.include_router(
         stream.router,
         prefix="/api/v1/interviews",
-        tags=["Live Voice Stream"],
+        tags=["Live Voice Stream (WebSocket)"],
     )
 
     @app.get("/health", tags=["Meta"], summary="Liveness probe")

@@ -77,13 +77,15 @@ def _override_settings(monkeypatch: pytest.MonkeyPatch, test_settings: Settings)
         "app.core.database",
         "app.core.security",
         "app.routers.stream",
-        "app.services.jd_analysis_service",
+        "app.services.onboarding_service",
+        "app.services.resume_parsing_service",
         "app.services.web_grounding_service",
         "app.services.llm_client",
         "app.services.tts_service",
         "app.services.voice_pipeline_service",
         "app.services.evaluation_service",
         "app.services.feedback_service",
+        "app.services.tavus_service",
         "app.websockets.connection_manager",
     ):
         try:
@@ -166,6 +168,7 @@ async def mock_services(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[dict[
         "stt_calls": [],
         "tts_calls": [],
         "grounding_calls": [],
+        "resume_parse_calls": [],
     }
     import json as _json
 
@@ -182,7 +185,7 @@ async def mock_services(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[dict[
         history["llm_calls"].append(call)
         sys_text = (messages[0].get("content", "") if messages else "").lower()
         if response_format and "json" in str(response_format).lower():
-            # Judge-style call (rubric) or JD parse.
+            # Judge-style call (rubric) or JD parse or resume or sentiment or weak_point or resume_gap.
             if "evaluate the candidate" in sys_text or "independent judge" in sys_text:
                 out = {
                     "scores": {"relevance": 85.0, "technical_depth": 80.0, "clarity": 75.0},
@@ -196,6 +199,10 @@ async def mock_services(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[dict[
                     "pacing_comment": "Slightly rushed but clear.",
                     "sentiment_summary": "Constructive, calm delivery.",
                 }
+            elif "resume claims" in sys_text or "career coach" in sys_text:
+                # CHANGE 3 — resume gap judge: return an empty flags list by default.
+                # Tests that want gaps can monkeypatch this fixture inside their test.
+                out = {"flags": []}
             elif "weak point" in sys_text or "coaching" in sys_text or "suggested_answer" in sys_text:
                 out = {
                     "issue": "Answer was missing a concrete example of the trade-off.",
@@ -204,6 +211,20 @@ async def mock_services(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[dict[
                         "alternatives — approach A and B — compare their latency, "
                         "then anchor the final choice to the user's SLA."
                     ),
+                }
+            elif "recruiter parsing a candidate resume" in sys_text:
+                # CHANGE 1 — resume candidate profile parser.
+                out = {
+                    "skills": ["Python", "FastAPI", "PostgreSQL", "Async I/O", "Docker", "System Design"],
+                    "past_roles": [
+                        "Acme Corp — Senior Backend Engineer, 2022–present",
+                        "Beta Inc — Backend Engineer, 2019–2022",
+                    ],
+                    "notable_projects": [
+                        "Led migration of monolith to microservices (40% latency reduction)",
+                        "Built async event pipeline processing 1M events/day",
+                    ],
+                    "education": ["B.Sc. Computer Science, State University, 2019"],
                 }
             else:
                 # JD parse call.
@@ -265,6 +286,33 @@ async def mock_services(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[dict[
         )
 
     monkeypatch.setattr(ground_mod.WebGroundingService, "research_role", _fake_research)
+
+    # --- CHANGE 1 — Resume parsing (file extraction + candidate profile)
+    # We bypass the raw PDF/DOCX extraction path entirely (no real parsers in
+    # tests) and instead stub the single public entry that the onboarding
+    # service calls: parse_candidate_profile → returns a deterministic profile.
+    from app.services import resume_parsing_service as resume_mod
+    from app.models.schemas import CandidateProfile
+
+    async def _fake_parse_candidate_profile(upload):
+        history["resume_parse_calls"].append(
+            {"filename": upload.filename, "content_type": upload.content_type}
+        )
+        return CandidateProfile(
+            skills=["Python", "FastAPI", "PostgreSQL", "Async I/O", "Docker", "System Design"],
+            past_roles=[
+                "Acme Corp — Senior Backend Engineer, 2022–present",
+                "Beta Inc — Backend Engineer, 2019–2022",
+            ],
+            notable_projects=[
+                "Led migration of monolith to microservices (40% latency reduction)",
+                "Built async event pipeline processing 1M events/day",
+            ],
+            education=["B.Sc. Computer Science, State University, 2019"],
+        )
+
+    monkeypatch.setattr(resume_mod, "parse_candidate_profile", _fake_parse_candidate_profile)
+
     yield history
 
 

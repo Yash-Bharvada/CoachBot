@@ -71,6 +71,38 @@ class Settings(BaseSettings):
         description="Tavily API key (required when web_grounding_provider=tavily).",
     )
 
+    # --- Tavus (video interviewer, optional) -------------------------------
+    tavus_api_key: str | None = Field(
+        default=None,
+        description="Tavus API key for AI video interview PAL conversations.",
+    )
+    tavus_base_url: str = Field(
+        default="https://tavusapi.com/v2",
+        description="Tavus REST API base URL.",
+    )
+    tavus_persona_id: str | None = Field(
+        default=None,
+        description="Default Tavus persona_id used when creating conversations.",
+    )
+    tavus_face_id: str | None = Field(
+        default=None,
+        description="Default Tavus face_id used when creating conversations.",
+    )
+    tavus_webhook_secret: str | None = Field(
+        default=None,
+        description="Shared secret used to verify Tavus webhook payload signatures.",
+    )
+
+    # --- Resume parsing ----------------------------------------------------
+    max_resume_size_mb: int = Field(
+        default=10,
+        description="Maximum allowed resume upload size in megabytes.",
+    )
+    allowed_resume_extensions: list[str] = Field(
+        default_factory=lambda: ["pdf", "docx"],
+        description="Case-insensitive list of allowed resume file extensions.",
+    )
+
     # --- HuggingFace (optional fallback) -----------------------------------
     huggingface_api_key: str | None = Field(
         default=None,

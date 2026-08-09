@@ -13,7 +13,12 @@ DifficultyBaseline = Literal["easy", "medium", "hard"]
 
 
 class RoleContextMatrixDoc(TypedDict, total=False):
-    """Shape of a single row in the ``role_context_matrices`` collection."""
+    """Shape of a single row in the ``role_context_matrices`` collection.
+
+    Additive to the v0.1 schema (CHANGE 4): the ``candidate_profile`` embedded
+    document carries the structured output of Module 1's resume parser.  Existing indexes on
+    ``(interview_id, created_at) remain valid since this is an embedded field.
+    """
 
     interview_id: str
     job_title: str
@@ -25,6 +30,9 @@ class RoleContextMatrixDoc(TypedDict, total=False):
     grounding_summary: str
     grounding_status: Literal["ok", "degraded", "skipped"]
     grounding_raw: dict | None  # never surfaced to the candidate
+    tech_stack: list[str]
+    seniority_indicators: list[str]
+    candidate_profile: dict  # matches CandidateProfile Pydantic model shape
     created_at: float
     updated_at: float
 
