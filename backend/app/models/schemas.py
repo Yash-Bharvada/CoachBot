@@ -296,9 +296,13 @@ class RubricScores(BaseModel):
 
 
 class WeakPoint(BaseResponse):
-    """Single per-turn improvement item surfaced in the feedback report."""
+    """A single identified weak point turn with a constructive suggestion."""
 
     turn_index: Annotated[int, Field(...)]
+    question_text: Annotated[
+        str | None,
+        Field(default=None, description="The specific question asked by the interviewer."),
+    ] = None
     issue: Annotated[
         str, Field(..., description="Short sentence describing what went wrong.")
     ]

@@ -7,6 +7,7 @@
 <p align="center"><i>A production-grade, voice- and video-enabled AI technical interview platform built for HackMatrix 2026 – Round 2.</i></p>
 
 <p align="center">
+  <a href="https://canva.link/coachbothackmatrixround2" target="_blank"><img alt="Canva Presentation Deck" src="https://img.shields.io/badge/Canva-Presentation%20Deck-00C4CC?style=for-the-badge&logo=canva&logoColor=white"></a>
   <img alt="HackMatrix 2026" src="https://img.shields.io/badge/HackMatrix%202026-Round%202-00E676?style=for-the-badge&logo=target">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white">
@@ -69,6 +70,7 @@ Built on **FastAPI**, **Next.js 16 (Turbopack)**, **Tavus AI Avatar API**, **Gro
 | **Team Leader** | **Yash Bharvada** (3rd-year CS & Engineering - AI/ML at CSPIT CHARUSAT) |
 | **Contact Email** | `23cs006@charusat.edu.in` |
 | **GitHub Repository** | [https://github.com/Yash-Bharvada/CoachBot](https://github.com/Yash-Bharvada/CoachBot) *(Public)* |
+| **Presentation Deck (Canva)** | [canva.link/coachbothackmatrixround2](https://canva.link/coachbothackmatrixround2) 🎨 |
 | **Live Local Workspace** | `http://localhost:3000` (Frontend) / `http://localhost:8000` (Backend) |
 | **Demo Video Link** | `https://youtu.be/demo_session_coachbot` *(Submitted)* |
 

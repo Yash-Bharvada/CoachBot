@@ -3,14 +3,14 @@
 import { useEffect, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { AnimatePresence, motion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
   ChevronDown,
   Download,
   Loader2,
+  RefreshCw,
   RotateCcw,
   Share2,
   Sparkles,
@@ -48,58 +48,39 @@ function ReportContent() {
   const interviewId = searchParams.get('interview_id') || 'demo_session'
 
   const [loading, setLoading] = useState<boolean>(true)
+  const [reEvaluating, setReEvaluating] = useState<boolean>(false)
   const [report, setReport] = useState<ReportData | null>(null)
   const [open, setOpen] = useState<number>(0)
 
-  useEffect(() => {
-    async function loadReport() {
+  async function loadReport(forceReEval = false) {
+    if (forceReEval) {
+      setReEvaluating(true)
+    } else {
       setLoading(true)
-      try {
-        let data: Record<string, unknown>
+    }
+    try {
+      let data: Record<string, unknown>
+      if (forceReEval) {
+        const fin = await finalizeInterview(interviewId)
+        data = (fin.report || fin) as Record<string, unknown>
+      } else {
         try {
-          data = await getInterviewReport(interviewId)
+          data = (await getInterviewReport(interviewId)) as Record<string, unknown>
         } catch {
           const fin = await finalizeInterview(interviewId)
-          data = fin.report || fin
+          data = (fin.report || fin) as Record<string, unknown>
         }
-        setReport(data as unknown as ReportData)
-      } catch (err) {
-        console.error('Failed to load report:', err)
-        setReport({
-          overall_readiness: 76,
-          section_scores: {
-            confidence_and_tone: 78,
-            fluency: 72,
-            technical_accuracy: 86,
-            relevance: 82,
-          },
-          narrative_summary:
-            'Demonstrated strong technical clarity and composed delivery. Structure answers with STAR format for maximum executive impact.',
-          competency_gaps: ['Cross-functional leadership', 'Design systems'],
-          resume_gap_flags: [
-            {
-              claim: 'Led cross-functional system redesign',
-              issue:
-                'Worth being ready to go deeper on measurable outcomes — the live response focused on architecture details without stating final user impact metrics.',
-            },
-          ],
-          weak_points: [
-            {
-              question_text: 'Tell me about a complex architectural tradeoff you made recently.',
-              suggested_model_answer:
-                'Start by establishing the business constraint, compare the top two technical paths evaluated, then conclude with the exact metric improved.',
-            },
-            {
-              question_text: 'How do you handle scope pushback from senior product managers?',
-              suggested_model_answer:
-                'Frame tradeoffs around user impact and delivery velocity rather than engineering preferences alone.',
-            },
-          ],
-        })
-      } finally {
-        setLoading(false)
       }
+      setReport(data as unknown as ReportData)
+    } catch (err) {
+      console.error('Failed to load report:', err)
+    } finally {
+      setLoading(false)
+      setReEvaluating(false)
     }
+  }
+
+  useEffect(() => {
     loadReport()
   }, [interviewId])
 
@@ -109,37 +90,38 @@ function ReportContent() {
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-accent/20 text-accent">
           <Loader2 className="h-8 w-8 animate-spin" />
         </div>
-        <h2 className="mt-6 font-serif text-2xl font-medium">Generating your interview report...</h2>
+        <h2 className="mt-6 font-serif text-2xl font-medium">Generating your personalized interview report...</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Analyzing speech confidence, technical accuracy, and resume substantiation.
+          Running deep rubric evaluation on your answers, technical depth, and resume claims.
         </p>
       </div>
     )
   }
 
-  const overall = Math.round(report?.overall_readiness ?? 76)
+  const overall = Math.round(report?.overall_readiness ?? 75)
   const sec = report?.section_scores || {}
-  let rawNarrative = report?.narrative_summary || ''
-  if (!rawNarrative || rawNarrative.includes('No transcript') || rawNarrative.includes('Overall readiness score:')) {
-    rawNarrative =
-      'Demonstrated strong baseline technical knowledge and composed delivery. Structuring your answers with clear STAR-format context, architectural decisions, and measurable outcomes will land your responses with executive authority.'
-  }
+  const rawNarrative = report?.narrative_summary || 'Practice evaluation completed. Review your technical depth and model answers below.'
 
   const scores = [
     {
-      label: 'Confidence & tone',
-      value: Math.round(sec.confidence_and_tone ?? 78),
-      note: 'Clear and composed delivery',
+      label: 'Technical Accuracy',
+      value: Math.round(sec.technical_accuracy ?? 78),
+      note: 'Problem solving, architecture & technical depth',
     },
     {
-      label: 'Fluency & pacing',
+      label: 'Relevance & Precision',
+      value: Math.round(sec.relevance ?? 76),
+      note: 'Directness in answering the interviewer’s prompt',
+    },
+    {
+      label: 'Confidence & Delivery',
+      value: Math.round(sec.confidence_and_tone ?? 74),
+      note: 'Spoken composure and professional authority',
+    },
+    {
+      label: 'Fluency & Pacing',
       value: Math.round(sec.fluency ?? 72),
-      note: 'Pacing and filler word analysis',
-    },
-    {
-      label: 'Technical accuracy',
-      value: Math.round(sec.technical_accuracy ?? 86),
-      note: 'Domain knowledge & problem solving',
+      note: 'Speech cadence and filler word rate',
     },
   ]
 
@@ -149,7 +131,7 @@ function ReportContent() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12 lg:py-16">
-      {/* Executive Print Banner (Visible ONLY when printing) */}
+      {/* Executive Print Banner */}
       <div className="print-header hidden print:block mb-8 border-b border-slate-300 pb-4">
         <div className="flex items-center justify-between">
           <div>
@@ -176,13 +158,22 @@ function ReportContent() {
             A real-time evaluation of your technical depth, communication clarity, and candidate positioning.
           </p>
         </div>
-        <div className="no-print print:hidden flex gap-2">
+        <div className="no-print print:hidden flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => loadReport(true)}
+            disabled={reEvaluating}
+            className="inline-flex h-10 items-center gap-2 rounded-full border border-border bg-background px-4 text-sm font-medium transition hover:bg-muted disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${reEvaluating ? 'animate-spin' : ''}`} />
+            {reEvaluating ? 'Re-evaluating...' : 'Re-evaluate'}
+          </button>
           <button
             type="button"
             onClick={() => window.print()}
             className="inline-flex h-10 items-center gap-2 rounded-full border border-border bg-background px-4 text-sm font-medium transition hover:bg-muted"
           >
-            <Download className="h-4 w-4" /> Download PDF Report
+            <Download className="h-4 w-4" /> Download PDF
           </button>
           <button
             type="button"
@@ -199,7 +190,7 @@ function ReportContent() {
         </div>
       </div>
 
-      {/* Main Score Banner & Secondary Cards */}
+      {/* Main Score Banner */}
       <div className="mt-10 space-y-5">
         <motion.section
           initial={{ opacity: 0, y: 12 }}
@@ -238,13 +229,14 @@ function ReportContent() {
           </div>
         </motion.section>
 
-        <section className="grid gap-4 sm:grid-cols-3">
+        {/* 4 Score Metric Cards */}
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {scores.map((score, index) => (
             <motion.article
               key={score.label}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
+              transition={{ delay: index * 0.08 }}
               className="break-inside-avoid print:break-inside-avoid print-avoid-break print-card rounded-2xl border border-border bg-card p-5"
             >
               <div className="flex items-center justify-between">
@@ -257,7 +249,7 @@ function ReportContent() {
                   style={{ width: `${score.value}%` }}
                 />
               </div>
-              <h2 className="mt-5 text-sm font-medium">{score.label}</h2>
+              <h2 className="mt-4 text-sm font-semibold">{score.label}</h2>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">{score.note}</p>
             </motion.article>
           ))}
@@ -275,40 +267,36 @@ function ReportContent() {
             <Target className="h-5 w-5 text-accent no-print print:hidden" />
           </div>
           <div className="mt-6 space-y-3">
-            {[
-              { label: 'System Architecture & Problem Solving', status: 'Demonstrated', tone: 'good' },
-              { label: 'Technical Communication & Clarity', status: 'Demonstrated', tone: 'good' },
-              {
-                label: 'Cross-functional Collaboration',
-                status: gaps.includes('Cross-functional leadership') ? 'Needs More Detail' : 'Demonstrated',
-                tone: gaps.includes('Cross-functional leadership') ? 'mid' : 'good',
-              },
-              {
-                label: 'Metrics & Performance Optimization',
-                status: gaps.includes('Design systems') || gaps.length > 1 ? 'Partially Probed' : 'Demonstrated',
-                tone: 'mid',
-              },
-            ].map((item) => (
-              <div
-                key={item.label}
-                className="flex items-center justify-between gap-4 border-b border-border/70 py-3 last:border-0"
-              >
-                <span className="text-sm">{item.label}</span>
-                <span
-                  className={`shrink-0 text-xs font-medium ${
-                    item.tone === 'good' ? 'text-accent' : 'text-amber-600'
-                  }`}
+            {gaps && gaps.length > 0 ? (
+              gaps.map((gap) => (
+                <div
+                  key={gap}
+                  className="flex items-center justify-between gap-4 border-b border-border/70 py-3 last:border-0"
                 >
-                  {item.status}
+                  <span className="text-sm font-medium">{gap}</span>
+                  <span className="shrink-0 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-600">
+                    Needs More Depth
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="flex items-center justify-between gap-4 border-b border-border/70 py-3">
+                <span className="text-sm font-medium">Core Role Competencies</span>
+                <span className="shrink-0 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-600">
+                  Demonstrated
                 </span>
               </div>
-            ))}
+            )}
+            <div className="flex items-center justify-between gap-4 py-2 text-xs text-muted-foreground">
+              <span>Technical Clarity & Communication</span>
+              <span className="text-accent font-medium">Evaluated Live</span>
+            </div>
           </div>
         </section>
 
         <section className="break-inside-avoid print:break-inside-avoid print-avoid-break print-card rounded-2xl border border-border bg-card p-6 sm:p-7">
           <div className="flex items-start gap-3">
-            <div className="no-print print:hidden flex h-9 w-9 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
+            <div className="no-print print:hidden flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
               <TriangleAlert className="h-4 w-4" />
             </div>
             <div>
@@ -316,21 +304,34 @@ function ReportContent() {
               <h2 className="mt-2 font-serif text-2xl">Claim to shore up</h2>
             </div>
           </div>
-          <p className="mt-6 text-sm leading-6 text-muted-foreground">
-            {resumeFlags.length > 0
-              ? resumeFlags[0].issue
-              : 'You mentioned leading system refactoring across teams, but didn’t get to the measurable outcome. Prepare the before-and-after metric so your story feels complete.'}
-          </p>
-          <a
-            href="/interview"
+          <div className="mt-6 space-y-4 text-sm leading-6 text-muted-foreground">
+            {resumeFlags.length > 0 ? (
+              resumeFlags.map((flag, idx) => (
+                <div key={idx} className="rounded-xl border border-border/60 bg-muted/30 p-4">
+                  {flag.claim && (
+                    <p className="font-semibold text-foreground mb-1 text-xs uppercase tracking-wide text-accent">
+                      {flag.claim}
+                    </p>
+                  )}
+                  <p>{flag.issue}</p>
+                </div>
+              ))
+            ) : (
+              <p>
+                All checked resume claims and projects were verified and backed with technical explanations during your session.
+              </p>
+            )}
+          </div>
+          <Link
+            href={`/interview?interview_id=${interviewId}`}
             className="no-print print:hidden mt-5 inline-flex items-center text-sm font-medium text-accent hover:underline"
           >
             Practice this response <ArrowRight className="ml-1 h-3.5 w-3.5" />
-          </a>
+          </Link>
         </section>
       </div>
 
-      {/* Next Reps Section */}
+      {/* Targeted Practice Reps Section */}
       <section className="break-inside-avoid print:break-inside-avoid print-avoid-break print-card mt-5 rounded-2xl border border-border bg-card p-6 sm:p-7">
         <div className="flex items-center gap-3">
           <Sparkles className="h-5 w-5 text-accent no-print print:hidden" />
@@ -344,37 +345,52 @@ function ReportContent() {
             ? nextReps
             : [
                 {
-                  question_text: 'Tell me about a technical decision you are proud of.',
-                  suggested_model_answer:
-                    'Start with context, state your architectural decision, explain the trade-offs, and finish with measurable performance metrics.',
-                },
-                {
-                  question_text: 'How do you measure the impact of system refactoring?',
-                  suggested_model_answer:
-                    'Quantify CPU/memory savings, latency reduction, developer velocity improvement, and incident frequency decrease.',
+                  question_text: 'Tell me about a technical decision or architecture choice you made recently.',
+                  issue: 'Live answer lacked concrete metrics and structured trade-off evaluation.',
+                  suggested_answer:
+                    'Start with context, state your architectural decision, compare the top alternatives evaluated, and finish with measurable latency or throughput outcomes.',
                 },
               ]
           ).map((item, index) => {
-            const question = item.question_text || `Practice Question #${index + 1}`
-            const advice =
-              item.suggested_model_answer || item.suggested_answer || item.issue || 'Focus on concise, structured delivery.'
+            const question = item.question_text || `Target Practice Question #${index + 1}`
+            const critique = item.issue
+            const modelAnswer = item.suggested_answer || item.suggested_model_answer
             return (
-              <div key={question} className="break-inside-avoid print:break-inside-avoid print-avoid-break">
+              <div key={index} className="break-inside-avoid print:break-inside-avoid print-avoid-break py-4">
                 <button
                   type="button"
                   onClick={() => setOpen(open === index ? -1 : index)}
-                  className="flex w-full items-center justify-between gap-4 py-5 text-left"
+                  className="flex w-full items-center justify-between gap-4 py-2 text-left"
                 >
-                  <span className="text-sm font-medium">{question}</span>
+                  <div>
+                    <span className="text-xs font-mono text-accent uppercase tracking-wider block mb-1">
+                      Question #{index + 1}
+                    </span>
+                    <span className="text-sm font-semibold text-foreground">{question}</span>
+                  </div>
                   <ChevronDown
                     className={`no-print print:hidden h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
                       open === index ? 'rotate-180' : ''
                     }`}
                   />
                 </button>
-                <div className={`${open === index ? 'block' : 'hidden print:block print-accordion-content'} pb-5 text-sm leading-6 text-muted-foreground`}>
-                  <span className="font-medium text-foreground">Recommended Answer Structure: </span>
-                  {advice}
+                <div
+                  className={`${
+                    open === index ? 'block' : 'hidden print:block print-accordion-content'
+                  } mt-4 space-y-3 rounded-xl bg-muted/40 p-4 text-sm leading-6`}
+                >
+                  {critique && (
+                    <div>
+                      <span className="font-semibold text-amber-500">Coach Feedback: </span>
+                      <span className="text-muted-foreground">{critique}</span>
+                    </div>
+                  )}
+                  {modelAnswer && (
+                    <div>
+                      <span className="font-semibold text-accent">Recommended Model Answer: </span>
+                      <span className="text-muted-foreground">{modelAnswer}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )
@@ -394,7 +410,7 @@ function ReportContent() {
           href="/onboarding"
           className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-primary px-6 font-medium text-primary-foreground transition hover:opacity-90"
         >
-          <RotateCcw className="h-4 w-4" /> Run another practice session
+          <RotateCcw className="h-4 w-4" /> Start a new interview
         </Link>
       </div>
     </div>
@@ -427,3 +443,4 @@ export default function ReportPage() {
     </main>
   )
 }
+

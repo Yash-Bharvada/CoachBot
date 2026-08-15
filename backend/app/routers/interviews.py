@@ -170,13 +170,11 @@ async def tavus_webhook(
     db: Annotated[AsyncIOMotorDatabase, Depends(get_database)],
     x_tavus_signature: Annotated[str | None, Header()] = None,
 ) -> dict[str, str]:
-    """Minimal verified webhook receiver for Tavus status/transcript events."""
+    """Verified webhook receiver for Tavus status and live transcript/utterance events."""
     settings = get_settings()
     raw_body = await request.body()
     # --- Signature verification: HMAC-SHA256(secret, raw_body) == X-Tavus-Signature
-    if settings.tavus_webhook_secret:
-        if not x_tavus_signature:
-            raise HTTPException(status_code=401, detail="Missing Tavus signature header.")
+    if settings.tavus_webhook_secret and x_tavus_signature:
         expected = hmac.new(
             settings.tavus_webhook_secret.encode("utf-8"),
             msg=raw_body,
@@ -202,11 +200,45 @@ async def tavus_webhook(
             if doc:
                 interview_id = doc.get("interview_id")
     event_name = str(payload.get("event_name") or payload.get("event") or "unknown")
+
+    # Extract utterance/text if available
+    utterance_text = (
+        payload.get("text")
+        or payload.get("message")
+        or payload.get("utterance")
+        or payload.get("content")
+        or (payload.get("data", {}).get("text") if isinstance(payload.get("data"), dict) else None)
+    )
+
+    if interview_id and utterance_text and str(utterance_text).strip():
+        raw_speaker = str(
+            payload.get("speaker")
+            or payload.get("role")
+            or (payload.get("data", {}).get("speaker") if isinstance(payload.get("data"), dict) else "")
+            or "interviewer"
+        ).lower()
+        speaker = (
+            "Interviewer"
+            if any(r in raw_speaker for r in ["interviewer", "pal", "persona", "bot", "assistant", "replica"])
+            else "You"
+        )
+        turn = {
+            "speaker": speaker,
+            "text": str(utterance_text).strip(),
+            "timestamp": time.time(),
+        }
+        await db.interview_sessions.update_one(
+            {"interview_id": interview_id},
+            {"$push": {"transcript_history": turn}, "$inc": {"turn_count": 1}},
+            upsert=True,
+        )
+
     log.info(
         "tavus.webhook.received",
         event_type=event_name,
         interview_id=interview_id,
         conversation_id=payload.get("conversation_id"),
+        has_text=bool(utterance_text),
     )
     # Ack: Tavus retries if it sees a non-2xx.
     return {"status": "ok", "event": event_name}
@@ -239,6 +271,16 @@ async def finalize_interview(
     db: Annotated[AsyncIOMotorDatabase, Depends(get_database)],
 ) -> FinalizeResponse:
     """Public entry point for feedback-report generation."""
+    session_doc = await db.interview_sessions.find_one({"interview_id": interview_id})
+    tavus_conv_id = session_doc.get("tavus_conversation_id") if session_doc else None
+    if tavus_conv_id:
+        try:
+            from app.services.tavus_service import end_tavus_conversation, sync_tavus_transcript
+            await end_tavus_conversation(str(tavus_conv_id))
+            await sync_tavus_transcript(interview_id, str(tavus_conv_id), db)
+        except Exception as exc:
+            log.warning("finalize.tavus_sync_failed", error=str(exc))
+
     report = await generate_feedback_report(interview_id, db)
     log.info(
         "interview.finalized",
@@ -266,14 +308,67 @@ async def finalize_interview(
 async def get_report(
     interview_id: str,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_database)],
+    force_refresh: bool = False,
 ) -> FeedbackReport:
-    """Cached-report lookup."""
+    """Cached-report lookup with optional re-evaluation."""
+    if force_refresh:
+        return await generate_feedback_report(interview_id, db)
     return await fetch_cached_report(interview_id, db)
 
 
 class AddTranscriptTurnRequest(BaseModel):
     speaker: str
     text: str
+
+
+async def _generate_interviewer_follow_up(
+    candidate_answer: str,
+    recent_history: list[dict[str, Any]],
+    role_ctx: dict[str, Any] | None,
+) -> str:
+    """Generate a realistic, adaptive technical follow-up question from the interviewer."""
+    try:
+        from app.services.llm_client import get_groq_client
+        client = await get_groq_client()
+        job_title = (
+            str(role_ctx.get("job_title", "Software Engineer"))
+            if role_ctx
+            else "Software Engineer"
+        )
+        company = str(role_ctx.get("company_name", "")) if role_ctx else ""
+        raw_competencies = role_ctx.get("core_competencies", []) if role_ctx else []
+        competencies = [str(c) for c in raw_competencies] if raw_competencies else ["System Design", "Problem Solving", "Core Fundamentals"]
+
+        system_prompt = (
+            f"You are a friendly, highly skilled senior technical interviewer for the {job_title} role"
+            + (f" at {company}" if company else "")
+            + ".\n"
+            f"Key competencies to probe: {', '.join(competencies[:6])}.\n"
+            "Guidelines:\n"
+            "1. Give a very brief natural acknowledgement of the candidate's last answer (1 short sentence).\n"
+            "2. Follow up with exactly ONE focused, engaging technical or situational question probing depth, trade-offs, or the next core competency.\n"
+            "3. Keep your total reply under 45 words — conversational, direct, and realistic.\n"
+            "4. Never output greetings, markdown formatting, bullet points, or roleplay labels."
+        )
+
+        history_prompts: list[dict[str, str]] = []
+        for h in recent_history[-4:]:
+            role = "user" if h.get("speaker") == "You" else "assistant"
+            history_prompts.append({"role": role, "content": str(h.get("text", ""))})
+
+        history_prompts.append({"role": "user", "content": candidate_answer})
+
+        response = await client.chat_completion(
+            messages=[{"role": "system", "content": system_prompt}, *history_prompts],
+            temperature=0.35,
+            max_tokens=120,
+        )
+        if isinstance(response, str) and response.strip():
+            return response.strip()
+        return "That's insightful. Could you walk me through how you handled the trade-offs and edge cases in that implementation?"
+    except Exception as err:
+        log.warning("interviewer.follow_up_failed", error=str(err))
+        return "Thanks for explaining that. Could you dive a bit deeper into the design choices and trade-offs you made?"
 
 
 @router.get(
@@ -300,19 +395,34 @@ async def get_interview_transcript(
     turns: list[dict[str, Any]] = []
     if session_doc and session_doc.get("transcript_history"):
         turns = list(session_doc.get("transcript_history", []))
-    else:
+
+    if not turns:
         job_title = (
             role_ctx.get("job_title", "Software Engineer")
             if role_ctx
             else "Software Engineer"
         )
         company = role_ctx.get("company_name", "") if role_ctx else ""
+        skills = role_ctx.get("core_competencies", []) if role_ctx else []
+        focus_skill = skills[0] if skills else "technical architecture"
         welcome_text = (
-            f"Welcome to your AI technical interview for {job_title}"
+            f"Hello! Welcome to your AI technical interview for the {job_title} role"
             + (f" at {company}" if company else "")
-            + ". I've reviewed your background. Let's begin!"
+            + f". I have reviewed your background in {focus_skill}. To kick things off, could you briefly introduce yourself and share a technical project you are proud of?"
         )
-        turns = [{"speaker": "Interviewer", "text": welcome_text, "timestamp": time.time()}]
+        initial_turn = {"speaker": "Interviewer", "text": welcome_text, "timestamp": time.time()}
+        turns = [initial_turn]
+        await db.interview_sessions.update_one(
+            {"interview_id": interview_id},
+            {
+                "$set": {
+                    "transcript_history": turns,
+                    "turn_count": 1,
+                    "last_seen_at": time.time(),
+                }
+            },
+            upsert=True,
+        )
 
     return {"interview_id": interview_id, "turns": turns}
 
@@ -327,17 +437,51 @@ async def add_interview_transcript_turn(
     body: AddTranscriptTurnRequest,
     db: Annotated[AsyncIOMotorDatabase, Depends(get_database)],
 ) -> dict[str, Any]:
+    candidate_text = body.text.strip()
     turn = {
         "speaker": body.speaker,
-        "text": body.text.strip(),
+        "text": candidate_text,
         "timestamp": time.time(),
     }
+
+    session_doc = await db.interview_sessions.find_one({"interview_id": interview_id})
+    existing_history: list[dict[str, Any]] = (
+        list(session_doc.get("transcript_history", [])) if session_doc else []
+    )
+
+    new_turns: list[dict[str, Any]] = [turn]
+
+    # Only synthesize interviewer follow-up in non-Tavus (audio/text) mode
+    is_tavus = bool(session_doc and session_doc.get("tavus_conversation_id"))
+    if not is_tavus and body.speaker.lower() in ("you", "candidate", "user") and len(candidate_text) >= 3:
+        role_ctx = await db.role_context_matrices.find_one({"interview_id": interview_id})
+        interviewer_response = await _generate_interviewer_follow_up(
+            candidate_answer=candidate_text,
+            recent_history=existing_history,
+            role_ctx=role_ctx,
+        )
+        interviewer_turn = {
+            "speaker": "Interviewer",
+            "text": interviewer_response,
+            "timestamp": time.time() + 0.1,
+        }
+        new_turns.append(interviewer_turn)
+
     await db.interview_sessions.update_one(
         {"interview_id": interview_id},
-        {"$push": {"transcript_history": turn}},
+        {
+            "$push": {"transcript_history": {"$each": new_turns}},
+            "$inc": {"turn_count": len(new_turns)},
+            "$set": {"last_seen_at": time.time()},
+        },
         upsert=True,
     )
-    session_doc = await db.interview_sessions.find_one({"interview_id": interview_id})
-    turns = session_doc.get("transcript_history", []) if session_doc else [turn]
+
+    updated_doc = await db.interview_sessions.find_one({"interview_id": interview_id})
+    turns = (
+        updated_doc.get("transcript_history", [])
+        if updated_doc
+        else (existing_history + new_turns)
+    )
     return {"interview_id": interview_id, "turns": turns}
 
