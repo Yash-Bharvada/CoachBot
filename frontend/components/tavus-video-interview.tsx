@@ -54,53 +54,6 @@ export function TavusVideoInterview({
     }
   }, [interviewId])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const windowObj = window as unknown as Record<string, any>
-    const SpeechRecognitionClass = windowObj.SpeechRecognition || windowObj.webkitSpeechRecognition
-
-    if (!SpeechRecognitionClass) return
-
-    let recognition: any = null
-    try {
-      recognition = new SpeechRecognitionClass()
-      recognition.continuous = true
-      recognition.interimResults = false
-      recognition.lang = 'en-US'
-
-      recognition.onresult = (event: any) => {
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            const text = event.results[i][0].transcript.trim()
-            if (text && text.length > 2) {
-              postInterviewTurn(interviewId, 'You', text).catch((err) =>
-                console.warn('Post turn error:', err),
-              )
-            }
-          }
-        }
-      }
-
-      recognition.onerror = (err: any) => {
-        if (err.error !== 'no-speech' && err.error !== 'aborted') {
-          console.warn('Speech recognition error:', err.error)
-        }
-      }
-
-      recognition.start()
-    } catch (e) {
-      console.warn('Speech recognition start failed:', e)
-    }
-
-    return () => {
-      if (recognition) {
-        try {
-          recognition.stop()
-        } catch (_) {}
-      }
-    }
-  }, [interviewId])
-
   if (loading) {
     return (
       <div className="flex min-h-[480px] w-full flex-col items-center justify-center rounded-2xl border border-primary-foreground/10 bg-[#1b3440] p-8 text-center text-primary-foreground">

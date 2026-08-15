@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, CirclePlay, FileText, Mic2, BarChart3, Sparkles, Target, Video, ShieldCheck } from 'lucide-react'
+import { ArrowRight, CirclePlay, FileText, Mic2, BarChart3, Sparkles, Target, Video, ShieldCheck, Play } from 'lucide-react'
 import { DemoDialog } from '@/components/demo-dialog'
 
 const steps = [
@@ -42,18 +42,67 @@ export default function Page() {
           <p className="mb-6 flex items-center gap-2 text-sm font-medium uppercase tracking-[0.18em] text-accent"><span className="h-px w-8 bg-accent" /> Practice with purpose</p>
           <h1 className="max-w-3xl font-serif text-5xl leading-[1.04] tracking-[-0.045em] text-balance sm:text-6xl lg:text-7xl">The interview is the skill. <em className="text-accent">Practice the real thing.</em></h1>
           <p className="mt-7 max-w-xl text-lg leading-8 text-muted-foreground">Upload your job description and resume, talk with an adaptive AI interviewer face-to-face, and walk away with a feedback report you can act on.</p>
-          <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-            <Link href="/onboarding" className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-primary px-6 font-medium text-primary-foreground transition-transform hover:-translate-y-0.5">Start Your Mock Interview <ArrowRight className="h-4 w-4" /></Link>
-            <button type="button" onClick={() => setDemoOpen(true)} className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-border bg-card px-6 font-medium transition-colors hover:bg-muted"><CirclePlay className="h-4 w-4 text-accent" /> Try a 60-Second Live Demo</button>
+          <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <Link href="/onboarding" className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground whitespace-nowrap transition-transform hover:-translate-y-0.5">
+              Start Free Mock Interview <ArrowRight className="h-4 w-4" />
+            </Link>
+            <button type="button" onClick={() => setDemoOpen(true)} className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-border bg-card px-5 text-sm font-medium whitespace-nowrap transition-all hover:bg-muted hover:shadow-md">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+                <Play className="h-3 w-3 fill-accent ml-0.5" />
+              </div>
+              Watch How AI Works
+            </button>
           </div>
           <div className="mt-10 flex items-center gap-4 text-sm text-muted-foreground"><div className="flex -space-x-2"><span className="avatar bg-[#29435c]">A</span><span className="avatar bg-[#738b78]">M</span><span className="avatar bg-[#b48165]">J</span></div><span>Built for candidates who want to feel ready.</span></div>
         </div>
         <div className="relative">
-          <div className="absolute -inset-5 rounded-[2rem] bg-accent/5 blur-2xl" aria-hidden="true" />
+          <div className="absolute -inset-5 rounded-[2rem] bg-accent/10 blur-2xl" aria-hidden="true" />
           <div className="relative overflow-hidden rounded-[1.75rem] border border-border bg-card shadow-2xl shadow-primary/10">
-            <div className="flex items-center justify-between border-b border-border px-5 py-4"><div className="flex items-center gap-2 text-sm font-medium"><span className="h-2 w-2 rounded-full bg-accent" />Live interview room</div><span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">Preview</span></div>
-            <div className="flex aspect-[4/3] flex-col items-center justify-center bg-[#e8eef1] px-8 text-center"><div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full border-8 border-card bg-primary text-2xl font-serif text-primary-foreground shadow-xl">A</div><p className="font-serif text-2xl text-primary">Meet your interviewer</p><p className="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">A thoughtful, adaptive conversation built around your next role.</p><button type="button" onClick={() => setDemoOpen(true)} className="mt-6 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground"><CirclePlay className="h-4 w-4" /> Start preview</button></div>
-            <div className="flex items-center justify-between px-5 py-4 text-xs text-muted-foreground"><span>Face-to-face practice</span><span>01:00 demo</span></div>
+            <div className="flex items-center justify-between border-b border-border px-5 py-4 bg-muted/40">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <span className="h-2.5 w-2.5 rounded-full bg-accent animate-pulse" />
+                AI Interview Workflow
+              </div>
+              <span className="rounded-full bg-accent/15 px-3 py-1 text-xs font-semibold text-accent">Full Video Flow</span>
+            </div>
+            
+            <div 
+              className="relative aspect-[4/3] group overflow-hidden bg-slate-950 cursor-pointer flex flex-col justify-end"
+              onClick={() => setDemoOpen(true)}
+            >
+              <video
+                src="/demo-video.mp4"
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="absolute inset-0 h-full w-full object-cover opacity-75 transition-transform duration-500 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+              <div className="relative z-10 p-6 text-white">
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-black/60 backdrop-blur-md px-3 py-1 text-xs font-medium text-white/90 border border-white/10">
+                  <Play className="h-3 w-3 fill-accent text-accent" /> Complete AI Flow Video
+                </div>
+                <h3 className="font-serif text-2xl text-white font-semibold leading-snug">
+                  See How the AI Works
+                </h3>
+                <p className="mt-1.5 text-xs text-white/80 leading-relaxed max-w-sm">
+                  Watch the complete end-to-end flow of our AI interviewer: from resume parsing to real-time adaptive voice & video dialogue.
+                </p>
+                <button 
+                  type="button" 
+                  onClick={(e) => { e.stopPropagation(); setDemoOpen(true); }} 
+                  className="mt-4 inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground shadow-lg transition-all hover:bg-accent/90 hover:scale-105 active:scale-95"
+                >
+                  <CirclePlay className="h-4 w-4" /> Watch Complete Demo Video
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between px-5 py-3.5 text-xs text-muted-foreground bg-muted/20 border-t border-border">
+              <span className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5 text-accent" /> End-to-End AI System</span>
+              <span className="font-medium text-foreground">Complete Demonstration</span>
+            </div>
           </div>
         </div>
       </section>

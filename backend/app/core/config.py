@@ -100,6 +100,14 @@ class Settings(BaseSettings):
         default="r79e883a",
         description="Default Tavus replica_id used when creating conversations.",
     )
+    tavus_backup_api_key: str | None = Field(
+        default="8b60592cb8eb473fbc4786251916bb71",
+        description="Backup Tavus API key used for automatic failover when primary limits are hit.",
+    )
+    tavus_backup_pal_id: str | None = Field(
+        default="p11d7be7266d",
+        description="Backup Tavus PAL ID used for automatic failover when primary limits are hit.",
+    )
     tavus_webhook_secret: str | None = Field(
         default=None,
         description="Shared secret used to verify Tavus webhook payload signatures.",

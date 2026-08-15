@@ -150,4 +150,9 @@ __pycache__/
 .pytest_cache/
 .coverage
 *.pdf
+.venv/
+venv/
+env/
+ENV/
+.Python
 

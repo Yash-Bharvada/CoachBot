@@ -54,8 +54,15 @@ export class ApiError extends Error {
   }
 }
 
-function extractHumanMessage(data: ApiErrorResponse | null): string | null {
+function extractHumanMessage(data: ApiErrorResponse | Record<string, any> | null): string | null {
   if (!data) return null
+  const dataObj = data as Record<string, any>
+  if (typeof dataObj.message === 'string' && dataObj.message) {
+    return dataObj.message
+  }
+  if (typeof dataObj.error === 'string' && dataObj.error) {
+    return dataObj.message ? `${dataObj.error}: ${dataObj.message}` : dataObj.error
+  }
   if (typeof data.detail === 'string') return data.detail
   if (Array.isArray(data.detail)) {
     const first = data.detail[0]

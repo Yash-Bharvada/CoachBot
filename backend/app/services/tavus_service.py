@@ -123,16 +123,10 @@ def build_conversational_context(role_ctx: dict[str, Any]) -> str:
 
 
 class _TavusHttpClient:
-    """Thin httpx wrapper with tenacity retries on transient HTTP errors."""
+    """Thin httpx wrapper with automatic backup key failover on quota/credits exhausted."""
 
     def __init__(self) -> None:
         settings = get_settings()
-        api_key = settings.tavus_api_key or ""
-        self._headers = {
-            "x-api-key": api_key,
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
         self._http = httpx.AsyncClient(
             base_url=settings.tavus_base_url,
             timeout=httpx.Timeout(30.0, connect=5.0),
@@ -142,26 +136,39 @@ class _TavusHttpClient:
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    @retry(
-        reraise=True,
-        stop=stop_after_attempt(2),
-        wait=wait_random_exponential(multiplier=0.5, max=4),
-        retry=retry_if_exception_type((httpx.HTTPError, TimeoutError)),
-    )
-    async def post(self, path: str, json_body: dict[str, Any]) -> dict[str, Any]:
-        settings = get_settings()
-        api_key = settings.tavus_api_key or ""
-        if not api_key:
+    def _get_headers(self, api_key: str | None = None) -> dict[str, str]:
+        key = api_key or self._settings.tavus_api_key or ""
+        return {
+            "x-api-key": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+
+    async def post(self, path: str, json_body: dict[str, Any], api_key: str | None = None) -> dict[str, Any]:
+        settings = self._settings
+        primary_key = api_key or settings.tavus_api_key or ""
+        if not primary_key and not settings.tavus_backup_api_key:
             raise SessionStateError(
                 "Tavus API key is not configured (TAVUS_API_KEY).",
                 details={"stage": "tavus_auth"},
             )
-        headers = {
-            "x-api-key": api_key,
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+        headers = self._get_headers(primary_key)
         resp = await self._http.post(path, json=json_body, headers=headers)
+        
+        # If primary key hits credit limits (402), auth errors (401), or rate limits (429), attempt backup key
+        if (
+            resp.status_code in (401, 402, 429)
+            or "out of conversational credits" in resp.text.lower()
+            or "credit" in resp.text.lower()
+        ) and settings.tavus_backup_api_key and primary_key != settings.tavus_backup_api_key:
+            log.warning(
+                "tavus.primary_limit_hit.switching_to_backup_key",
+                status=resp.status_code,
+                snippet=resp.text[:300],
+            )
+            backup_headers = self._get_headers(settings.tavus_backup_api_key)
+            resp = await self._http.post(path, json=json_body, headers=backup_headers)
+
         try:
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -191,20 +198,14 @@ class _TavusHttpClient:
             ) from exc
         return resp.json()
 
-    @retry(
-        reraise=True,
-        stop=stop_after_attempt(2),
-        wait=wait_random_exponential(multiplier=0.5, max=4),
-        retry=retry_if_exception_type((httpx.HTTPError, TimeoutError)),
-    )
-    async def get(self, path: str) -> dict[str, Any]:
-        settings = get_settings()
-        api_key = settings.tavus_api_key or ""
-        headers = {
-            "x-api-key": api_key,
-            "Authorization": f"Bearer {api_key}",
-        }
+    async def get(self, path: str, api_key: str | None = None) -> dict[str, Any]:
+        settings = self._settings
+        primary_key = api_key or settings.tavus_api_key or ""
+        headers = self._get_headers(primary_key)
         resp = await self._http.get(path, headers=headers)
+        if resp.status_code in (401, 402, 429) and settings.tavus_backup_api_key and primary_key != settings.tavus_backup_api_key:
+            backup_headers = self._get_headers(settings.tavus_backup_api_key)
+            resp = await self._http.get(path, headers=backup_headers)
         resp.raise_for_status()
         return resp.json()
 
@@ -234,19 +235,14 @@ async def close_tavus_client() -> None:
 async def _upload_document(
     interview_id: str, context_text: str
 ) -> list[str]:
-    """Upload the oversized context as a Tavus Document; return its tags.
-
-    We apply a single per-interview tag so the PAL's RAG retrieval is
-    precisely scoped — no cross-candidate leakage at retrieval time.
-    """
+    """Upload the oversized context as a Tavus Document; return its tags."""
     tag = f"{_DOC_TAG_PREFIX}{interview_id}"
     body = {
-        "document_name": f"Interview Context {interview_id}",
+        "document_name": f"context_{interview_id}",
+        "document_tags": [tag],
         "content": context_text,
-        "tags": [tag],
     }
     client = await _get_client()
-    # Tavus's Documents endpoint lives under /v2/documents.
     result = await client.post("/documents", body)
     log.info(
         "tavus.document.uploaded",
@@ -276,18 +272,21 @@ async def _cleanup_active_conversations(client: _TavusHttpClient) -> None:
     """End any existing active conversations on Tavus to free up concurrency slots."""
     try:
         settings = get_settings()
-        headers = {
-            "x-api-key": settings.tavus_api_key or "",
-            "Authorization": f"Bearer {settings.tavus_api_key or ''}",
-        }
-        resp = await client._http.get("/conversations", headers=headers)
-        if resp.status_code == 200:
-            data = resp.json().get("data", [])
-            for conv in data:
-                if conv.get("status") == "active":
-                    cid = conv.get("conversation_id")
-                    if cid:
-                        await client._http.post(f"/conversations/{cid}/end", headers=headers, json={})
+        for key in [settings.tavus_api_key, settings.tavus_backup_api_key]:
+            if not key:
+                continue
+            headers = {
+                "x-api-key": key,
+                "Authorization": f"Bearer {key}",
+            }
+            resp = await client._http.get("/conversations", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                for conv in data:
+                    if conv.get("status") == "active":
+                        cid = conv.get("conversation_id")
+                        if cid:
+                            await client._http.post(f"/conversations/{cid}/end", headers=headers, json={})
     except Exception as exc:
         log.warning("tavus.cleanup.failed", error=str(exc))
 
@@ -298,11 +297,7 @@ async def create_tavus_conversation(
     *,
     callback_url: str,
 ) -> TavusConversationResponse:
-    """Create a Tavus PAL conversation scoped to a specific interview_id.
-
-    *callback_url* is the fully-qualified URL Tavus will POST webhook events
-    to (e.g. ``https://app.example.com/api/v1/interviews/tavus-webhook``).
-    """
+    """Create a Tavus PAL conversation scoped to a specific interview_id with automatic backup failover."""
     settings = get_settings()
     persona_id, face_id = _resolve_persona_and_face(settings)
 
@@ -335,12 +330,6 @@ async def create_tavus_conversation(
 
     context_text = build_conversational_context(role_ctx)
 
-    extra_metadata: dict[str, Any] = {"interview_id": interview_id}
-    if settings.tavus_workspace_id:
-        extra_metadata["workspace_id"] = settings.tavus_workspace_id
-    if settings.tavus_pal_id:
-        extra_metadata["pal_id"] = settings.tavus_pal_id
-
     job_title = str(role_ctx.get("job_title", "target role"))
     company = role_ctx.get("company_name")
     custom_greeting = (
@@ -349,64 +338,107 @@ async def create_tavus_conversation(
         + ". I have reviewed your resume and job description. Let's begin!"
     )
 
-    pal_id = settings.tavus_pal_id
-
-    # Decide: inline string OR RAG document fallback.
-    if len(context_text) <= _INLINE_CONTEXT_CHAR_LIMIT:
-        payload = TavusConversationCreate(
-            pal_id=pal_id,
-            persona_id=None if pal_id else persona_id,
-            face_id=face_id,
-            custom_greeting=custom_greeting,
-            conversational_context=context_text,
-            document_tags=None,
-            callback_url=callback_url,
-            metadata=extra_metadata,
-        )
-    else:
-        tags = await _upload_document(interview_id, context_text)
-        payload = TavusConversationCreate(
-            pal_id=pal_id,
-            persona_id=None if pal_id else persona_id,
-            face_id=face_id,
-            custom_greeting=custom_greeting,
-            conversational_context=None,
-            document_tags=tags,
-            callback_url=callback_url,
-            metadata=extra_metadata,
-        )
-
     client = await _get_client()
-    body: dict[str, Any] = payload.model_dump(mode="json", exclude_none=True, exclude={"metadata"})
-    
+
+    # List of PAL + API Key candidates (Primary first, Backup failover second)
+    candidates: list[dict[str, str | None]] = [
+        {"pal_id": settings.tavus_pal_id, "api_key": settings.tavus_api_key, "label": "primary"},
+    ]
+    if settings.tavus_backup_pal_id or settings.tavus_backup_api_key:
+        candidates.append({
+            "pal_id": settings.tavus_backup_pal_id or settings.tavus_pal_id,
+            "api_key": settings.tavus_backup_api_key or settings.tavus_api_key,
+            "label": "backup",
+        })
+
     result = None
-    for attempt in range(3):
-        try:
-            result = await client.post("/conversations", body)
+    used_candidate = candidates[0]
+    last_error: Exception | None = None
+
+    for cand in candidates:
+        active_pal = cand["pal_id"]
+        active_key = cand["api_key"]
+        extra_metadata: dict[str, Any] = {"interview_id": interview_id}
+        if settings.tavus_workspace_id:
+            extra_metadata["workspace_id"] = settings.tavus_workspace_id
+        if active_pal:
+            extra_metadata["pal_id"] = active_pal
+
+        # Decide inline string vs RAG document
+        if len(context_text) <= _INLINE_CONTEXT_CHAR_LIMIT:
+            payload = TavusConversationCreate(
+                pal_id=active_pal,
+                persona_id=None if active_pal else persona_id,
+                face_id=face_id,
+                custom_greeting=custom_greeting,
+                conversational_context=context_text,
+                document_tags=None,
+                callback_url=callback_url,
+                metadata=extra_metadata,
+            )
+        else:
+            tags = await _upload_document(interview_id, context_text)
+            payload = TavusConversationCreate(
+                pal_id=active_pal,
+                persona_id=None if active_pal else persona_id,
+                face_id=face_id,
+                custom_greeting=custom_greeting,
+                conversational_context=None,
+                document_tags=tags,
+                callback_url=callback_url,
+                metadata=extra_metadata,
+            )
+
+        body: dict[str, Any] = payload.model_dump(mode="json", exclude_none=True, exclude={"metadata"})
+
+        for attempt in range(2):
+            try:
+                result = await client.post("/conversations", body, api_key=active_key)
+                used_candidate = cand
+                break
+            except Exception as exc:
+                last_error = exc
+                snippet = ""
+                if isinstance(exc, SessionStateError) and exc.details:
+                    snippet = str(exc.details.get("snippet", "")).lower()
+                
+                if "maximum concurrent conversations" in snippet and attempt < 1:
+                    log.info("tavus.concurrency_limit.cleaning_up", candidate=cand["label"])
+                    await _cleanup_active_conversations(client)
+                    await asyncio.sleep(3.0)
+                else:
+                    log.warning(
+                        "tavus.candidate_failed.trying_next",
+                        candidate=cand["label"],
+                        pal_id=active_pal,
+                        error=str(exc),
+                    )
+                    break
+        
+        if result:
             break
-        except SessionStateError as exc:
-            snippet = exc.details.get("snippet", "") if exc.details else ""
-            if "maximum concurrent conversations" in snippet and attempt < 2:
-                log.info("tavus.concurrency_limit.retrying", attempt=attempt + 1)
-                await _cleanup_active_conversations(client)
-                await asyncio.sleep(4.0 * (attempt + 1))
-            else:
-                raise
 
     if not result:
-        raise SessionStateError("Failed to create Tavus conversation after retries.")
+        raise SessionStateError(
+            "Failed to create Tavus video conversation on both primary and backup credentials.",
+            details={"last_error": str(last_error)},
+        )
+
     conv_id = result.get("conversation_id") or result.get("id")
     if not conv_id:
         raise SessionStateError(
             "Tavus conversation creation returned no conversation_id.",
             details={"stage": "tavus_create", "keys": list(result.keys())},
         )
+
     log.info(
         "tavus.conversation.created",
         interview_id=interview_id,
         conversation_id=conv_id,
-        mode="inline" if payload.conversational_context else "document_rag",
+        pal_used=used_candidate["pal_id"],
+        tier=used_candidate["label"],
     )
+
     conv_url = result.get("conversation_url") or result.get("room_url") or f"https://tavusapi.com/c/{conv_id}"
     conv_status = result.get("status", "active")
     await db.interview_sessions.update_one(
@@ -414,6 +446,7 @@ async def create_tavus_conversation(
         {
             "$set": {
                 "tavus_conversation_id": conv_id,
+                "tavus_pal_id": used_candidate["pal_id"],
                 "tavus_room_url": result.get("room_url"),
                 "tavus_conversation_url": conv_url,
                 "updated_at": __import__("time").time(),
@@ -428,34 +461,131 @@ async def create_tavus_conversation(
     )
 
 
+async def end_tavus_conversation(tavus_conversation_id: str) -> None:
+    """Explicitly end a Tavus conversation to flush transcripts and free resources."""
+    if not tavus_conversation_id:
+        return
+    try:
+        client = await _get_client()
+        settings = get_settings()
+        headers = {
+            "x-api-key": settings.tavus_api_key or "",
+            "Authorization": f"Bearer {settings.tavus_api_key or ''}",
+        }
+        await client._http.post(
+            f"/conversations/{tavus_conversation_id}/end",
+            headers=headers,
+            json={},
+        )
+        log.info("tavus.conversation.ended", conversation_id=tavus_conversation_id)
+    except Exception as exc:
+        log.warning("tavus.end_conversation.failed", conversation_id=tavus_conversation_id, error=str(exc))
+
+
 async def sync_tavus_transcript(
     interview_id: str,
     tavus_conversation_id: str,
     db: Any,
 ) -> None:
     """Query Tavus API GET /conversations/{id} and sync server-side transcript items into MongoDB."""
+    if not tavus_conversation_id:
+        return
     try:
         client = await _get_client()
         res = await client.get(f"/conversations/{tavus_conversation_id}")
-        tavus_turns = res.get("transcript") or res.get("messages") or []
-        if isinstance(tavus_turns, list) and tavus_turns:
-            import time
-            formatted_turns = []
-            for item in tavus_turns:
-                if isinstance(item, dict):
-                    msg = item.get("message") or item.get("text") or item.get("content")
-                    role = str(item.get("role") or item.get("speaker") or "interviewer").lower()
-                    speaker = "Interviewer" if any(r in role for r in ["interviewer", "bot", "replica", "persona", "pal"]) else "You"
-                    if msg:
-                        formatted_turns.append({"speaker": speaker, "text": str(msg).strip(), "timestamp": time.time()})
-            if formatted_turns:
-                session_doc = await db.interview_sessions.find_one({"interview_id": interview_id})
-                existing = session_doc.get("transcript_history", []) if session_doc else []
-                if len(formatted_turns) > len(existing):
-                    await db.interview_sessions.update_one(
-                        {"interview_id": interview_id},
-                        {"$set": {"transcript_history": formatted_turns}},
+        data = res.get("data") if isinstance(res.get("data"), dict) else res
+        
+        # Check transcript in various possible fields in Tavus API responses
+        raw_transcript = (
+            data.get("transcript")
+            or data.get("messages")
+            or data.get("events")
+            or res.get("transcript")
+            or res.get("messages")
+            or []
+        )
+
+        import time
+        formatted_turns: list[dict[str, Any]] = []
+
+        if isinstance(raw_transcript, str) and raw_transcript.strip():
+            # If transcript is a single multi-line string
+            lines = raw_transcript.strip().split("\n")
+            for line in lines:
+                line_str = line.strip()
+                if not line_str:
+                    continue
+                if ":" in line_str:
+                    speaker_part, text_part = line_str.split(":", 1)
+                    speaker_clean = speaker_part.strip().lower()
+                    speaker = (
+                        "Interviewer"
+                        if any(r in speaker_clean for r in ["interviewer", "bot", "replica", "persona", "pal", "assistant", "ai"])
+                        else "You"
                     )
+                    formatted_turns.append({
+                        "speaker": speaker,
+                        "text": text_part.strip(),
+                        "timestamp": time.time(),
+                    })
+                else:
+                    formatted_turns.append({
+                        "speaker": "Interviewer",
+                        "text": line_str,
+                        "timestamp": time.time(),
+                    })
+
+        elif isinstance(raw_transcript, list) and raw_transcript:
+            for item in raw_transcript:
+                if isinstance(item, dict):
+                    msg = (
+                        item.get("message")
+                        or item.get("text")
+                        or item.get("content")
+                        or (item.get("data", {}).get("text") if isinstance(item.get("data"), dict) else None)
+                    )
+                    role = str(
+                        item.get("role")
+                        or item.get("speaker")
+                        or (item.get("data", {}).get("speaker") if isinstance(item.get("data"), dict) else "")
+                        or "interviewer"
+                    ).lower()
+                    speaker = (
+                        "Interviewer"
+                        if any(r in role for r in ["interviewer", "bot", "replica", "persona", "pal", "assistant", "ai"])
+                        else "You"
+                    )
+                    if msg and str(msg).strip():
+                        formatted_turns.append({
+                            "speaker": speaker,
+                            "text": str(msg).strip(),
+                            "timestamp": time.time(),
+                        })
+
+        if formatted_turns:
+            session_doc = await db.interview_sessions.find_one({"interview_id": interview_id})
+            existing = session_doc.get("transcript_history", []) if session_doc else []
+            
+            # If formatted turns has interviewer turns or is more complete, update MongoDB
+            has_interviewer_turns = any(t.get("speaker") == "Interviewer" for t in formatted_turns)
+            if len(formatted_turns) >= len(existing) or has_interviewer_turns:
+                await db.interview_sessions.update_one(
+                    {"interview_id": interview_id},
+                    {
+                        "$set": {
+                            "transcript_history": formatted_turns,
+                            "turn_count": len(formatted_turns),
+                            "updated_at": time.time(),
+                        }
+                    },
+                    upsert=True,
+                )
+                log.info(
+                    "tavus.transcript.synced",
+                    interview_id=interview_id,
+                    turns_synced=len(formatted_turns),
+                )
     except Exception as exc:
         log.warning("tavus.transcript.sync_failed", interview_id=interview_id, error=str(exc))
+
 
